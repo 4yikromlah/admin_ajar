@@ -1,0 +1,10 @@
+{
+  "name": "Remix: SMASA-Online",
+  "description": "Sistem Manajemen Pembelajaran Informatika SMASA (Neumorphic \u0026 Glassmorphic)",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
