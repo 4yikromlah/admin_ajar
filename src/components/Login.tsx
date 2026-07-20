@@ -147,12 +147,18 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     setSiswaError('');
     setIsSiswaLoading(true);
 
+    const cleanUsername = siswaUsername.trim().toLowerCase();
+    const cleanPassword = siswaPassword.trim();
+
     setTimeout(() => {
-      const found = siswaList.find(
-        (s) =>
-          (s.username === siswaUsername || s.nis === siswaUsername) &&
-          s.password === siswaPassword
-      );
+      const found = siswaList.find((s) => {
+        const studentUsername = (s.username || '').trim().toLowerCase();
+        const studentNis = (s.nis || '').trim().toLowerCase();
+        const studentPassword = (s.password || 'smasa123').trim();
+        
+        return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
+               studentPassword === cleanPassword;
+      });
 
       if (found) {
         onStudentLoginSuccess(found);
