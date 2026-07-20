@@ -464,6 +464,37 @@ export function saveSuperAdminSpreadsheetUrl(url: string) {
   localStorage.setItem('smasa_superadmin_spreadsheet_url', url.trim());
 }
 
+export async function fetchSuperAdminSpreadsheetUrlFromServer(): Promise<string> {
+  try {
+    const response = await fetch('/api/superadmin-url');
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.url) {
+        localStorage.setItem('smasa_superadmin_spreadsheet_url', data.url);
+        return data.url;
+      }
+    }
+  } catch (e) {
+    console.error("Gagal mengambil URL spreadsheet dari server:", e);
+  }
+  return localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';
+}
+
+export async function saveSuperAdminSpreadsheetUrlToServer(url: string): Promise<boolean> {
+  localStorage.setItem('smasa_superadmin_spreadsheet_url', url.trim());
+  try {
+    const response = await fetch('/api/superadmin-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url.trim() }),
+    });
+    return response.ok;
+  } catch (e) {
+    console.error("Gagal menyimpan URL spreadsheet ke server:", e);
+    return false;
+  }
+}
+
 export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
   const url = getSuperAdminSpreadsheetUrl();
   if (!url) return false;
@@ -498,7 +529,8 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
 }
 
 export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
-  const url = getSuperAdminSpreadsheetUrl();
+  // Sync the spreadsheet URL from the server first, to ensure we are using the most up-to-date configured URL!
+  const url = await fetchSuperAdminSpreadsheetUrlFromServer();
   if (!url) return false;
 
   try {
@@ -516,6 +548,61 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
     return false;
   } catch (error) {
     console.error("[Google Sheets Super Admin Sync Error] Gagal pull:", error);
+    throw error;
+  }
+}
+
+export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promise<boolean> {
+  // 1. Sinkronisasi URL spreadsheet terbaru dari server
+  const url = await fetchSuperAdminSpreadsheetUrlFromServer();
+  if (!url) {
+    // Jika tidak ada URL spreadsheet di server/lokal, simpan lokal saja sebagai fallback
+    const teachers = loadTeacherAccounts();
+    if (teachers.some(t => t.username === newTeacher.username)) {
+      throw new Error(`Username "${newTeacher.username}" sudah terdaftar.`);
+    }
+    const updated = [...teachers, newTeacher];
+    saveTeacherAccounts(updated);
+    return true;
+  }
+
+  try {
+    // 2. Tarik data guru terbaru dari Google Spreadsheet terlebih dahulu agar tidak menimpa data yang ada
+    const response = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+    });
+    if (!response.ok) throw new Error("Gagal menyinkronkan data pendaftaran dengan database pusat");
+    
+    const db = await response.json();
+    let currentTeachers = loadTeacherAccounts();
+    if (db && Array.isArray(db.teachers)) {
+      currentTeachers = db.teachers;
+    }
+
+    // 3. Validasi username unik pada data terbaru dari spreadsheet
+    if (currentTeachers.some(t => t.username === newTeacher.username)) {
+      throw new Error(`Username "${newTeacher.username}" sudah terdaftar di sistem.`);
+    }
+
+    // 4. Tambahkan guru baru ke daftar terbaru
+    const updated = [...currentTeachers, newTeacher];
+
+    // 5. Simpan ke local storage
+    saveTeacherAccounts(updated);
+
+    // 6. Dorong kembali daftar lengkap ke Google Spreadsheet
+    const pushResponse = await fetch(url, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ teachers: updated }),
+    });
+
+    if (!pushResponse.ok) throw new Error("Gagal mendaftarkan ke database Google Spreadsheet");
+    return true;
+  } catch (error: any) {
+    console.error("[Register and Sync Error] Detail kegagalan:", error);
     throw error;
   }
 }

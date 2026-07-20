@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Users, Award, CalendarCheck, BookOpen, BellRing, Plus, Trash2, ArrowRight, Star, Database, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Users, Award, CalendarCheck, BookOpen, BellRing, Plus, Trash2, ArrowRight, Star, Database, RefreshCw, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Siswa, Nilai, Presensi, Pembelajaran, Pengumuman, AppSettings } from '../types';
 
@@ -131,6 +131,22 @@ export default function Dashboard({
             <p className="text-slate-600 mt-2 text-sm max-w-xl leading-relaxed">
               Selamat datang di portal pembelajaran **{settings.kopSekolah || 'SMASA-Online'}**. Di sini Anda dapat memantau perkembangan siswa, mengelola kurikulum koding, dan menganalisis nilai harian {settings.mataPelajaran || 'Informatika'} secara real-time.
             </p>
+            {localStorage.getItem('lastLoggedInTime') && (
+              <div className="mt-4 flex flex-wrap items-center gap-2 bg-white/65 border border-white/40 py-2 px-3 rounded-xl text-slate-600 text-xs shadow-sm w-fit">
+                <Clock size={14} className="text-blue-500 shrink-0" />
+                <span>
+                  Login Terakhir: <strong>{localStorage.getItem('lastLoggedInTime')}</strong> di <strong>{localStorage.getItem('lastLoggedInSchoolName') || settings.kopSekolah}</strong>
+                </span>
+                {localStorage.getItem('lastLoggedInSchoolLogo') && (
+                  <img
+                    src={localStorage.getItem('lastLoggedInSchoolLogo')!}
+                    alt="Logo"
+                    className="w-4 h-4 rounded object-cover ml-1 shadow-sm shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+              </div>
+            )}
           </div>
           <button
             onClick={() => setCurrentMenu('pembelajaran')}

@@ -8,6 +8,8 @@ import {
   getTeacherSchoolName,
   getSuperAdminSpreadsheetUrl,
   saveSuperAdminSpreadsheetUrl,
+  saveSuperAdminSpreadsheetUrlToServer,
+  fetchSuperAdminSpreadsheetUrlFromServer,
   pushSuperAdminToGoogleSheets,
   pullSuperAdminFromGoogleSheets
 } from '../data';
@@ -39,39 +41,45 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
 
   // Auto-pull data from spreadsheet on mount if URL is configured
   React.useEffect(() => {
-    const savedUrl = getSuperAdminSpreadsheetUrl();
-    if (savedUrl) {
+    const initSpreadsheetData = async () => {
       setIsSyncing(true);
-      pullSuperAdminFromGoogleSheets()
-        .then((ok) => {
+      try {
+        const serverUrl = await fetchSuperAdminSpreadsheetUrlFromServer();
+        if (serverUrl) {
+          setSpreadsheetUrl(serverUrl);
+          const ok = await pullSuperAdminFromGoogleSheets();
           if (ok) {
             setTeachers(loadTeacherAccounts());
             setSuccessMsg('Data guru terbaru berhasil disinkronkan dari Google Spreadsheet!');
             setTimeout(() => setSuccessMsg(''), 4000);
           }
-        })
-        .catch((err) => {
-          console.error("[Auto Pull on Mount Error]", err);
-          setErrorMsg('Gagal menyinkronkan data otomatis dari Google Spreadsheet.');
-          setTimeout(() => setErrorMsg(''), 4000);
-        })
-        .finally(() => {
-          setIsSyncing(false);
-        });
-    }
+        }
+      } catch (err) {
+        console.error("[Auto Pull on Mount Error]", err);
+        setErrorMsg('Gagal menyinkronkan data otomatis dari Google Spreadsheet.');
+        setTimeout(() => setErrorMsg(''), 4000);
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+    initSpreadsheetData();
   }, []);
 
   const handleSaveSpreadsheetUrl = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUrl = spreadsheetUrl.trim();
-    saveSuperAdminSpreadsheetUrl(cleanUrl);
-    setSuccessMsg('URL Spreadsheet Super Admin berhasil disimpan!');
     
-    // Auto-pull immediately after saving to load existing data
-    if (cleanUrl) {
-      setIsSyncing(true);
-      setErrorMsg('');
-      try {
+    setIsSyncing(true);
+    setErrorMsg('');
+    setSuccessMsg('Menyimpan URL...');
+
+    try {
+      // Save locally and server-side
+      await saveSuperAdminSpreadsheetUrlToServer(cleanUrl);
+      setSuccessMsg('URL Spreadsheet Super Admin berhasil disimpan!');
+      
+      // Auto-pull immediately after saving to load existing data
+      if (cleanUrl) {
         const ok = await pullSuperAdminFromGoogleSheets();
         if (ok) {
           setTeachers(loadTeacherAccounts());
@@ -79,17 +87,15 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
         } else {
           setErrorMsg('URL disimpan, namun gagal mengambil data guru. Pastikan spreadsheet Anda memiliki data.');
         }
-      } catch (error: any) {
-        setErrorMsg(`Gagal menyinkronkan data: ${error?.message || error}`);
-      } finally {
-        setIsSyncing(false);
-        setTimeout(() => {
-          setSuccessMsg('');
-          setErrorMsg('');
-        }, 5000);
       }
-    } else {
-      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (error: any) {
+      setErrorMsg(`Gagal menyinkronkan data: ${error?.message || error}`);
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => {
+        setSuccessMsg('');
+        setErrorMsg('');
+      }, 5000);
     }
   };
 

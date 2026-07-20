@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School } from 'lucide-react';
 import { Siswa, AppSettings, TeacherAccount } from '../types';
-import { loadTeacherAccounts, saveTeacherAccounts } from '../data';
+import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchSuperAdminSpreadsheetUrlFromServer } from '../data';
 
 interface LoginProps {
   siswaList: Siswa[];
@@ -21,6 +21,27 @@ type LoginRole = 'guru' | 'siswa';
 
 export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLoginSuccess, onStudentLoginSuccess, settings }: LoginProps) {
   const [role, setRole] = useState<LoginRole>('guru');
+  
+  // State for login success animation and details display
+  const [loginSuccessData, setLoginSuccessData] = useState<{
+    role: 'guru' | 'siswa' | 'superadmin';
+    nama: string;
+    sekolah: string;
+    logo: string;
+    mataPelajaran: string;
+  } | null>(null);
+
+  const getTeacherSettings = (username: string): AppSettings | null => {
+    try {
+      const data = localStorage.getItem(`smasa_${username}_settings`);
+      if (data) {
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.error("Gagal memuat pengaturan guru:", e);
+    }
+    return null;
+  };
   
   // State Login Guru
   const [guruUsername, setGuruUsername] = useState('');
@@ -62,8 +83,34 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
   });
 
   // Load teachers to populate school dropdown
-  const teachersListForSchools = loadTeacherAccounts();
-  const uniqueSchools = Array.from(new Set(teachersListForSchools.map(t => t.asalSekolah).filter(Boolean))) as string[];
+  const [teachersList, setTeachersList] = useState<TeacherAccount[]>(() => loadTeacherAccounts());
+
+  // Auto-sync on mount to pull latest teachers from centralized spreadsheet
+  React.useEffect(() => {
+    const syncTeachers = async () => {
+      try {
+        const url = await fetchSuperAdminSpreadsheetUrlFromServer();
+        if (url) {
+          const response = await fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+          });
+          if (response.ok) {
+            const db = await response.json();
+            if (db && Array.isArray(db.teachers)) {
+              saveTeacherAccounts(db.teachers);
+              setTeachersList(db.teachers);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Login Sync Teachers Error] Gagal menyelaraskan daftar guru otomatis:", err);
+      }
+    };
+    syncTeachers();
+  }, []);
+
+  const uniqueSchools = Array.from(new Set(teachersList.map(t => t.asalSekolah).filter(Boolean))) as string[];
   if (uniqueSchools.length === 0) {
     uniqueSchools.push("MGMP INFORMATIKA BONDOWOSO");
   }
@@ -83,13 +130,31 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       // 1. Check Super Admin Credentials
       if (cleanUsername === 'admin' && guruPassword === 'sableng212') {
         localStorage.setItem('hasEverLoggedIn', 'true');
-        onSuperAdminLoginSuccess();
+        
+        const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+        localStorage.setItem('lastLoggedInSchoolName', 'Super Admin');
+        localStorage.setItem('lastLoggedInSchoolLogo', '');
+        localStorage.setItem('lastLoggedInMataPelajaran', 'All Subjects');
+        localStorage.setItem('lastLoggedInTime', loginTime);
+        localStorage.setItem('lastLoggedInUserNama', 'Super Admin');
+        localStorage.setItem('lastLoggedInRole', 'superadmin');
+
+        setLoginSuccessData({
+          role: 'superadmin',
+          nama: 'Super Admin',
+          sekolah: 'Dashboard Super Admin',
+          logo: '',
+          mataPelajaran: 'Sistem Pusat'
+        });
+
+        setTimeout(() => {
+          onSuperAdminLoginSuccess();
+        }, 2200);
         return;
       }
 
       // 2. Check Teacher Accounts
-      const teachers = loadTeacherAccounts();
-      const matchedTeacher = teachers.find(
+      const matchedTeacher = teachersList.find(
         (t) => t.username === cleanUsername && t.password === guruPassword
       );
 
@@ -100,7 +165,31 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
           return;
         }
         localStorage.setItem('hasEverLoggedIn', 'true');
-        onTeacherLoginSuccess(matchedTeacher.username);
+        
+        const tSettings = getTeacherSettings(matchedTeacher.username);
+        const sName = tSettings?.kopSekolah || matchedTeacher.asalSekolah || 'MGMP INFORMATIKA BONDOWOSO';
+        const sLogo = tSettings?.logoSekolah || '';
+        const sMataPelajaran = tSettings?.mataPelajaran || matchedTeacher.mataPelajaran || 'Informatika';
+        const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+
+        localStorage.setItem('lastLoggedInSchoolName', sName);
+        localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
+        localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
+        localStorage.setItem('lastLoggedInTime', loginTime);
+        localStorage.setItem('lastLoggedInUserNama', matchedTeacher.nama);
+        localStorage.setItem('lastLoggedInRole', 'guru');
+
+        setLoginSuccessData({
+          role: 'guru',
+          nama: matchedTeacher.nama,
+          sekolah: sName,
+          logo: sLogo,
+          mataPelajaran: sMataPelajaran
+        });
+
+        setTimeout(() => {
+          onTeacherLoginSuccess(matchedTeacher.username);
+        }, 2200);
         return;
       }
 
@@ -110,7 +199,30 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
       if (cleanUsername === allowedUsername && guruPassword === allowedPassword) {
         localStorage.setItem('hasEverLoggedIn', 'true');
-        onTeacherLoginSuccess(cleanUsername);
+
+        const sName = settings?.kopSekolah || 'MGMP INFORMATIKA BONDOWOSO';
+        const sLogo = settings?.logoSekolah || '';
+        const sMataPelajaran = settings?.mataPelajaran || 'Informatika';
+        const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+
+        localStorage.setItem('lastLoggedInSchoolName', sName);
+        localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
+        localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
+        localStorage.setItem('lastLoggedInTime', loginTime);
+        localStorage.setItem('lastLoggedInUserNama', settings?.namaGuru || 'Guru');
+        localStorage.setItem('lastLoggedInRole', 'guru');
+
+        setLoginSuccessData({
+          role: 'guru',
+          nama: settings?.namaGuru || 'Guru',
+          sekolah: sName,
+          logo: sLogo,
+          mataPelajaran: sMataPelajaran
+        });
+
+        setTimeout(() => {
+          onTeacherLoginSuccess(cleanUsername);
+        }, 2200);
         return;
       }
 
@@ -119,7 +231,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     }, 600);
   };
 
-  const handleRegSubmit = (e: React.FormEvent) => {
+  const handleRegSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError('');
     setRegSuccess('');
@@ -139,14 +251,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       return;
     }
 
-    setTimeout(() => {
-      const teachers = loadTeacherAccounts();
-      if (teachers.some((t) => t.username === cleanUsername)) {
-        setRegError(`Username "${cleanUsername}" sudah terdaftar.`);
-        setIsRegLoading(false);
-        return;
-      }
-
+    try {
       const newTeacher: TeacherAccount = {
         id: `T${Date.now()}`,
         nama: regNama.trim(),
@@ -157,19 +262,25 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         asalSekolah: regAsalSekolah.trim(),
       };
 
-      const updated = [...teachers, newTeacher];
-      saveTeacherAccounts(updated);
+      await registerTeacherAndSync(newTeacher);
+
+      // Refresh teachers list state
+      const updatedTeachers = loadTeacherAccounts();
+      setTeachersList(updatedTeachers);
 
       setRegSuccess('Pendaftaran berhasil diajukan! Harap hubungi Super Admin untuk proses persetujuan (approval).');
-      setIsRegLoading(false);
-
+      
       // Clear input fields
       setRegNama('');
       setRegUsername('');
       setRegPassword('');
       setRegMataPelajaran('Informatika');
       setRegAsalSekolah('');
-    }, 800);
+    } catch (error: any) {
+      setRegError(error?.message || 'Gagal mengirimkan pendaftaran ke database.');
+    } finally {
+      setIsRegLoading(false);
+    }
   };
 
   const handleSiswaSubmit = (e: React.FormEvent) => {
@@ -258,7 +369,37 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
       if (found) {
         localStorage.setItem('hasEverLoggedIn', 'true');
-        onStudentLoginSuccess(found, matchedTeacherUsername);
+
+        let tSettings: AppSettings | null = null;
+        if (matchedTeacherUsername) {
+          tSettings = getTeacherSettings(matchedTeacherUsername);
+        }
+
+        const sName = tSettings?.kopSekolah || selectedSchool || 'MGMP INFORMATIKA BONDOWOSO';
+        const sLogo = tSettings?.logoSekolah || '';
+        const sMataPelajaran = tSettings?.mataPelajaran || 'Informatika';
+        const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+
+        localStorage.setItem('lastLoggedInSchoolName', sName);
+        localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
+        localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
+        localStorage.setItem('lastLoggedInTime', loginTime);
+        localStorage.setItem('lastLoggedInUserNama', found.nama);
+        localStorage.setItem('lastLoggedInRole', 'siswa');
+
+        setLoginSuccessData({
+          role: 'siswa',
+          nama: found.nama,
+          sekolah: sName,
+          logo: sLogo,
+          mataPelajaran: sMataPelajaran
+        });
+
+        const studentData = found;
+        const teacherUser = matchedTeacherUsername;
+        setTimeout(() => {
+          onStudentLoginSuccess(studentData, teacherUser);
+        }, 2200);
       } else {
         setSiswaError('NIS/Username atau Kata Sandi Siswa salah pada sekolah yang dipilih.');
         setIsSiswaLoading(false);
@@ -266,8 +407,74 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     }, 600);
   };
 
+  // Retrieve last login details from localStorage for persistent branding even when logged out
+  const lastSchoolName = localStorage.getItem('lastLoggedInSchoolName') || settings?.kopSekolah || 'MGMP INFORMATIKA BONDOWOSO';
+  const lastSchoolLogo = localStorage.getItem('lastLoggedInSchoolLogo') || settings?.logoSekolah || '';
+  const lastMataPelajaran = localStorage.getItem('lastLoggedInMataPelajaran') || settings?.mataPelajaran || 'Informatika';
+
   return (
-    <div className="min-h-screen bg-[#e0e5ec] flex flex-col items-center justify-center p-4 sm:p-6 md:p-8">
+    <div className="min-h-screen bg-[#e0e5ec] flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 relative overflow-hidden">
+      
+      {/* Dynamic Full Screen Login Success Overlay */}
+      <AnimatePresence>
+        {loginSuccessData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[999] flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: -20 }}
+              className="w-full max-w-md p-8 rounded-3xl bg-white/95 border border-white/50 shadow-2xl text-center space-y-6"
+            >
+              <div className="relative">
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: [0, 1.2, 1] }}
+                  transition={{ duration: 0.6 }}
+                  className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xl mx-auto overflow-hidden relative"
+                >
+                  {loginSuccessData.logo ? (
+                    <img src={loginSuccessData.logo} alt="Logo Sekolah" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <GraduationCap size={40} />
+                  )}
+                </motion.div>
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md border-2 border-white text-xs font-black">
+                  ✓
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 text-[10px] font-black uppercase tracking-widest">
+                  Login Berhasil
+                </span>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight pt-1">
+                  Selamat Datang Kembali
+                </h2>
+                <p className="text-sm font-extrabold text-blue-600 leading-none">
+                  {loginSuccessData.nama}
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-100/80 border border-slate-200/50 text-center space-y-1">
+                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">Portal Sekolah</span>
+                <span className="text-xs font-extrabold text-slate-700 block truncate">{loginSuccessData.sekolah}</span>
+                <span className="text-[10px] text-slate-500 font-bold block">{loginSuccessData.mataPelajaran}</span>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-400">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span>Mempersiapkan dasbor pembelajaran...</span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -275,25 +482,23 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         className="w-full max-w-lg p-6 sm:p-10 rounded-3xl neu-flat border border-white/40 space-y-8"
       >
         {/* Logo and Brand */}
-        {hasEverLoggedIn && (
-          <div className="text-center space-y-3">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg mx-auto overflow-hidden">
-              {settings?.logoSekolah ? (
-                <img src={settings.logoSekolah} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <GraduationCap size={32} />
-              )}
-            </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-wider uppercase">
-                {settings?.kopSekolah || 'MGMP INFORMATIKA BONDOWOSO'}
-              </h2>
-              <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-                Manajemen Pembelajaran {settings?.mataPelajaran || 'Informatika'}
-              </p>
-            </div>
+        <div className="text-center space-y-3">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg mx-auto overflow-hidden">
+            {lastSchoolLogo ? (
+              <img src={lastSchoolLogo} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <GraduationCap size={32} />
+            )}
           </div>
-        )}
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-wider uppercase leading-tight">
+              {lastSchoolName}
+            </h2>
+            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
+              Manajemen Pembelajaran {lastMataPelajaran}
+            </p>
+          </div>
+        </div>
 
         {/* Tab Selector (Neumorphic Style) */}
         <div className="p-1.5 rounded-2xl bg-slate-200/50 neu-inset flex relative overflow-hidden" id="login-role-selector">

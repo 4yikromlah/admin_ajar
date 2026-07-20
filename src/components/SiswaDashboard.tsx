@@ -604,8 +604,24 @@ export default function SiswaDashboard({
                     Selamat Belajar, <span className="text-blue-600">{siswa.nama}</span>!
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Silakan baca materi terbaru, tulis rangkuman literasi digital, dan pantau perkembangan akademikmu secara mandiri.
+                    Silakan baca materi terbaru, tulis rangkuman literasi digital, dan pantau perkembangan akademikmu secara mandiri di <strong>{localStorage.getItem('lastLoggedInSchoolName') || settings.kopSekolah || 'Sekolah'}</strong>.
                   </p>
+                  {localStorage.getItem('lastLoggedInTime') && (
+                    <div className="mt-3.5 flex flex-wrap items-center gap-2 bg-white/75 border border-white/50 py-1.5 px-2.5 rounded-xl text-slate-600 text-[11px] shadow-sm w-fit">
+                      <Clock size={12} className="text-blue-500 shrink-0" />
+                      <span>
+                        Login Terakhir: <strong>{localStorage.getItem('lastLoggedInTime')}</strong>
+                      </span>
+                      {localStorage.getItem('lastLoggedInSchoolLogo') && (
+                        <img
+                          src={localStorage.getItem('lastLoggedInSchoolLogo')!}
+                          alt="Logo"
+                          className="w-3.5 h-3.5 rounded object-cover shadow-sm shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="px-4 py-3 rounded-2xl bg-white/70 border border-white flex flex-col justify-center text-center shadow-sm shrink-0 min-w-[150px]">
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">KKM Kelas</span>
