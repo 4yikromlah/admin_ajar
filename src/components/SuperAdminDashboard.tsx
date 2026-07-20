@@ -44,6 +44,14 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
+  const triggerAutoPush = () => {
+    if (getSuperAdminSpreadsheetUrl()) {
+      pushSuperAdminToGoogleSheets().catch(err => {
+        console.error("[Auto Sync Error]", err);
+      });
+    }
+  };
+
   const handlePushSuperAdmin = async () => {
     if (!spreadsheetUrl) {
       setErrorMsg('Masukkan URL Spreadsheet Super Admin terlebih dahulu!');
@@ -133,6 +141,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     const updated = [...teachers, newTeacher];
     setTeachers(updated);
     saveTeacherAccounts(updated);
+    triggerAutoPush();
 
     // Reset
     setNama('');
@@ -181,6 +190,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
 
     setTeachers(updated);
     saveTeacherAccounts(updated);
+    triggerAutoPush();
     setEditingTeacher(null);
     setSuccessMsg('Kredensial akun guru berhasil diperbarui!');
     setTimeout(() => setSuccessMsg(''), 4000);
@@ -202,6 +212,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     });
     setTeachers(updated);
     saveTeacherAccounts(updated);
+    triggerAutoPush();
     setSuccessMsg(`Pendaftaran guru "${name}" berhasil disetujui! Guru sekarang dapat masuk ke portal.`);
     setTimeout(() => setSuccessMsg(''), 5000);
   };
@@ -925,6 +936,7 @@ function doPost(e) {
                     const updated = teachers.filter(t => t.id !== teacherToDelete.id);
                     setTeachers(updated);
                     saveTeacherAccounts(updated);
+                    triggerAutoPush();
                     setSuccessMsg(`Akun guru "${teacherToDelete.nama}" berhasil dihapus.`);
                     setTimeout(() => setSuccessMsg(''), 4000);
                     setTeacherToDelete(null);
