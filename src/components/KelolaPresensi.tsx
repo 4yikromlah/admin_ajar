@@ -22,7 +22,7 @@ import {
   Check,
   UserX
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Siswa, Presensi, AttendanceStatus } from '../types';
 
 interface KelolaPresensiProps {
@@ -47,6 +47,9 @@ export default function KelolaPresensi({
 
   // Mode: manual (pencatatan manual) vs qr (otomatis berbasis QR code)
   const [activeMode, setActiveMode] = useState<'manual' | 'qr'>('manual');
+
+  // Custom confirmation state for stopping the QR session
+  const [showEndQrConfirm, setShowEndQrConfirm] = useState(false);
 
   // QR Session states
   const [qrDuration, setQrDuration] = useState(10); // menit
@@ -312,11 +315,11 @@ export default function KelolaPresensi({
               className={`neu-flat-sm px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95 transition-all ${
                 siswaInClass.length === 0
                   ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
-                  : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-200'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100/75'
               }`}
               id="btn-simpan-presensi"
             >
-              <CheckCircle2 size={14} className="text-white" />
+              <CheckCircle2 size={14} className="text-emerald-700" />
               <span>Simpan Presensi</span>
             </button>
           </div>
@@ -553,31 +556,7 @@ export default function KelolaPresensi({
                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-[10px] text-slate-500 flex justify-between items-center gap-4">
                     <span>Siswa yang tidak scan akan dihitung Alpa saat sesi berakhir jika belum dipresensi manual.</span>
                     <button
-                      onClick={() => {
-                        const confirmed = window.confirm("Apakah Anda yakin ingin menutup sesi QR dan menandai semua siswa yang tidak memindai sebagai Alfa?");
-                        if (confirmed) {
-                          let updatedList = [...presensiList];
-                          siswaInClass.forEach((siswa) => {
-                            const exists = updatedList.find(
-                              (p) => p.siswaId === siswa.id && p.tanggal === qrActiveSession.tanggal
-                            );
-                            if (!exists) {
-                              updatedList.push({
-                                id: `P${Date.now()}_${siswa.id}`,
-                                siswaId: siswa.id,
-                                siswaNama: siswa.nama,
-                                siswaKelas: siswa.kelas,
-                                tanggal: qrActiveSession.tanggal,
-                                status: 'Alfa',
-                                metode: 'Manual'
-                              });
-                            }
-                          });
-                          onSavePresensi(updatedList);
-                          handleStopQrSession();
-                          alert("Sesi presensi QR ditutup. Siswa yang tidak memindai telah ditandai sebagai Alfa.");
-                        }
-                      }}
+                      onClick={() => setShowEndQrConfirm(true)}
                       className="px-2.5 py-1.5 rounded-lg bg-rose-600 text-white font-extrabold text-[9px] cursor-pointer hover:bg-rose-700 transition-all active:scale-95 shrink-0"
                     >
                       Akhiri & Tandai Lainnya Alfa
@@ -751,6 +730,74 @@ export default function KelolaPresensi({
           <strong>@PENGHUBUNG_GOOGLE_APPS_SCRIPT:</strong> Fungsi presensi ini diprogram untuk merujuk ke database `localStorage`. Di Google Sheets, idealnya absensi disimpan dalam lembar terpisah berdasarkan sheet nama bulan atau sheet `Presensi` terpusat dengan ID baris kombinasi `SiswaID_Tanggal`.
         </p>
       </div>
+
+      {/* Custom End QR Session Confirmation Modal */}
+      <AnimatePresence>
+        {showEndQrConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowEndQrConfirm(false)}
+              className="absolute inset-0 bg-black/25 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 15 }}
+              className="relative w-full max-w-sm bg-neu-bg p-6 rounded-3xl shadow-2xl border border-white/50 z-10 space-y-4"
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center">
+                  <AlertCircle size={20} />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Tutup Sesi QR?</h3>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Apakah Anda yakin ingin menutup sesi QR dan menandai semua siswa yang tidak memindai sebagai <strong>Alfa</strong>?
+              </p>
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEndQrConfirm(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer animate-none"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    let updatedList = [...presensiList];
+                    siswaInClass.forEach((siswa) => {
+                      const exists = updatedList.find(
+                        (p) => p.siswaId === siswa.id && p.tanggal === qrActiveSession.tanggal
+                      );
+                      if (!exists) {
+                        updatedList.push({
+                          id: `P${Date.now()}_${siswa.id}`,
+                          siswaId: siswa.id,
+                          siswaNama: siswa.nama,
+                          siswaKelas: siswa.kelas,
+                          tanggal: qrActiveSession.tanggal,
+                          status: 'Alfa',
+                          metode: 'Manual'
+                        });
+                      }
+                    });
+                    onSavePresensi(updatedList);
+                    handleStopQrSession();
+                    setShowEndQrConfirm(false);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all cursor-pointer shadow-md shadow-rose-100"
+                >
+                  Akhiri Sesi
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

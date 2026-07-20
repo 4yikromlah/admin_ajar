@@ -53,6 +53,7 @@ export default function KelolaPembelajaran({
   // State Modals
   const [showFormModal, setShowFormModal] = useState(false);
   const [selectedPembelajaran, setSelectedPembelajaran] = useState<Pembelajaran | null>(null);
+  const [pembelajaranToDelete, setPembelajaranToDelete] = useState<Pembelajaran | null>(null);
 
   // State Mode Fokus (Expand) & Laporan
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -208,12 +209,7 @@ export default function KelolaPembelajaran({
 
   // Hapus Pembelajaran (Dengan Konfirmasi Aman)
   const handleHapusPembelajaran = (p: Pembelajaran) => {
-    const konfirmasi = window.confirm(
-      `Apakah Anda yakin ingin menghapus materi:\n\n[${p.jenis}] ${p.judul}\n\nTautan luar yang disimpan juga akan dihapus dari portal.`
-    );
-    if (konfirmasi) {
-      onDeletePembelajaran(p.id);
-    }
+    setPembelajaranToDelete(p);
   };
 
   const expandedMateri = pembelajaranList.find((p) => p.id === expandedId);
@@ -1047,6 +1043,60 @@ export default function KelolaPembelajaran({
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Delete Confirmation Modal */}
+      <AnimatePresence>
+        {pembelajaranToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPembelajaranToDelete(null)}
+              className="absolute inset-0 bg-black/25 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 15 }}
+              className="relative w-full max-w-sm bg-neu-bg p-6 rounded-3xl shadow-2xl border border-white/50 z-10 space-y-4"
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center">
+                  <Trash2 size={20} />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Konfirmasi Hapus Materi</h3>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Apakah Anda yakin ingin menghapus materi:
+                <br /><br />
+                <strong>[{pembelajaranToDelete.jenis}] {pembelajaranToDelete.judul}</strong>?
+                <br /><br />
+                Tautan luar yang disimpan juga akan dihapus dari portal.
+              </p>
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPembelajaranToDelete(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeletePembelajaran(pembelajaranToDelete.id);
+                    setPembelajaranToDelete(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all cursor-pointer shadow-md shadow-rose-100"
+                >
+                  Ya, Hapus
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

@@ -13,6 +13,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   const [teachers, setTeachers] = useState<TeacherAccount[]>(() => loadTeacherAccounts());
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<TeacherAccount | null>(null);
+  const [teacherToDelete, setTeacherToDelete] = useState<TeacherAccount | null>(null);
 
   // Form states
   const [nama, setNama] = useState('');
@@ -113,13 +114,9 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   };
 
   const handleDeleteTeacher = (id: string, name: string) => {
-    const confirmDel = window.confirm(`Apakah Anda yakin ingin menghapus akun guru "${name}"? Seluruh data yang terkait dengan guru ini akan tetap berada di penyimpanan lokal namun tidak dapat diakses dari akun ini.`);
-    if (confirmDel) {
-      const updated = teachers.filter(t => t.id !== id);
-      setTeachers(updated);
-      saveTeacherAccounts(updated);
-      setSuccessMsg(`Akun guru "${name}" berhasil dihapus.`);
-      setTimeout(() => setSuccessMsg(''), 4000);
+    const target = teachers.find(t => t.id === id);
+    if (target) {
+      setTeacherToDelete(target);
     }
   };
 
@@ -573,6 +570,62 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
         </div>
 
       </div>
+
+      {/* Custom Delete Confirmation Modal */}
+      <AnimatePresence>
+        {teacherToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setTeacherToDelete(null)}
+              className="absolute inset-0 bg-black/25 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 15 }}
+              className="relative w-full max-w-sm bg-white p-6 rounded-3xl shadow-2xl border border-slate-100 z-10 space-y-4"
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center">
+                  <Trash2 size={20} />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Hapus Akun Guru?</h3>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Apakah Anda yakin ingin menghapus akun guru <strong>{teacherToDelete.nama}</strong>?
+                <br /><br />
+                Seluruh data yang terkait dengan guru ini akan tetap berada di penyimpanan lokal namun tidak dapat diakses dari akun ini.
+              </p>
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setTeacherToDelete(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer animate-none"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = teachers.filter(t => t.id !== teacherToDelete.id);
+                    setTeachers(updated);
+                    saveTeacherAccounts(updated);
+                    setSuccessMsg(`Akun guru "${teacherToDelete.nama}" berhasil dihapus.`);
+                    setTimeout(() => setSuccessMsg(''), 4000);
+                    setTeacherToDelete(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all cursor-pointer shadow-md shadow-rose-100"
+                >
+                  Ya, Hapus
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

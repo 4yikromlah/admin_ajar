@@ -47,6 +47,9 @@ export default function KelolaSiswa({
   const [importError, setImportError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // State Delete Confirmation
+  const [siswaToDelete, setSiswaToDelete] = useState<Siswa | null>(null);
+
   // Filter List Siswa
   const filteredSiswa = siswaList.filter((s) => {
     const matchesSearch =
@@ -118,12 +121,7 @@ export default function KelolaSiswa({
 
   // Hapus Siswa (Dengan Konfirmasi Aman)
   const handleHapusSiswa = (siswa: Siswa) => {
-    const konfirmasi = window.confirm(
-      `Apakah Anda yakin ingin menghapus data siswa:\n\nNama: ${siswa.nama}\nNISN: ${siswa.nis}\n\nTindakan ini juga akan menghapus data nilai & presensi terkait jika ada.`
-    );
-    if (konfirmasi) {
-      onDeleteSiswa(siswa.id);
-    }
+    setSiswaToDelete(siswa);
   };
 
   // Download Template CSV
@@ -792,6 +790,58 @@ export default function KelolaSiswa({
                   className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all text-xs cursor-pointer"
                 >
                   Tutup Profil
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Delete Confirmation Modal */}
+      <AnimatePresence>
+        {siswaToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSiswaToDelete(null)}
+              className="absolute inset-0 bg-black/25 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 15 }}
+              className="relative w-full max-w-sm bg-neu-bg p-6 rounded-3xl shadow-2xl border border-white/50 z-10 space-y-4"
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center">
+                  <Trash2 size={20} />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Konfirmasi Hapus Siswa</h3>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Apakah Anda yakin ingin menghapus data siswa <strong>{siswaToDelete.nama}</strong> (NISN: {siswaToDelete.nis})?
+                <br /><br />
+                Tindakan ini juga akan menghapus data nilai &amp; presensi terkait jika ada.
+              </p>
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSiswaToDelete(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeleteSiswa(siswaToDelete.id);
+                    setSiswaToDelete(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all cursor-pointer shadow-md shadow-rose-100"
+                >
+                  Ya, Hapus
                 </button>
               </div>
             </motion.div>

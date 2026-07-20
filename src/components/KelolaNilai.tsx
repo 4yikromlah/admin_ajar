@@ -35,6 +35,9 @@ export default function KelolaNilai({
   const [search, setSearch] = useState('');
   const [filterKelas, setFilterKelas] = useState('');
 
+  // State Delete Confirmation
+  const [nilaiToDelete, setNilaiToDelete] = useState<Nilai | null>(null);
+
   // PDF Logo aspect ratio states and helpers
   const [logoSekolahRatio, setLogoSekolahRatio] = useState<number>(1);
   const [logoProvRatio, setLogoProvRatio] = useState<number>(1);
@@ -500,12 +503,7 @@ export default function KelolaNilai({
 
   // Hapus Nilai (Dengan Konfirmasi Aman)
   const handleHapusNilai = (nilai: Nilai) => {
-    const konfirmasi = window.confirm(
-      `Apakah Anda yakin ingin menghapus data nilai:\n\nSiswa: ${nilai.siswaNama}\nKelas: ${nilai.siswaKelas}\nTotal Skor: ${nilai.total} (${nilai.grade})\n\nData harian siswa di tabel siswa akan tetap aman.`
-    );
-    if (konfirmasi) {
-      onDeleteNilai(nilai.id);
-    }
+    setNilaiToDelete(nilai);
   };
 
   // Drag over handler untuk CSV
@@ -1174,6 +1172,60 @@ export default function KelolaNilai({
                   }`}
                 >
                   Impor {importPreview.length} Data Nilai ke Database
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Delete Confirmation Modal */}
+      <AnimatePresence>
+        {nilaiToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setNilaiToDelete(null)}
+              className="absolute inset-0 bg-black/25 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 15 }}
+              className="relative w-full max-w-sm bg-neu-bg p-6 rounded-3xl shadow-2xl border border-white/50 z-10 space-y-4"
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center">
+                  <Trash2 size={20} />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Konfirmasi Hapus Nilai</h3>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Apakah Anda yakin ingin menghapus data nilai siswa <strong>{nilaiToDelete.siswaNama}</strong> (Kelas: {nilaiToDelete.siswaKelas})?
+                <br /><br />
+                Total Skor: <strong>{nilaiToDelete.total} ({nilaiToDelete.grade})</strong>
+                <br /><br />
+                Data harian siswa di tabel siswa akan tetap aman.
+              </p>
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setNilaiToDelete(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer animate-none"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeleteNilai(nilaiToDelete.id);
+                    setNilaiToDelete(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all cursor-pointer shadow-md shadow-rose-100"
+                >
+                  Ya, Hapus
                 </button>
               </div>
             </motion.div>

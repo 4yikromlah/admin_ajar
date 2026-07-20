@@ -5,7 +5,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Settings, Save, RotateCcw, Upload, Image, Trash2, Check, AlertCircle, Database, Copy } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings } from '../types';
 import { DEFAULT_SETTINGS } from '../data';
 
@@ -41,6 +41,7 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const fileInputSekolahRef = useRef<HTMLInputElement>(null);
   const fileInputProvRef = useRef<HTMLInputElement>(null);
@@ -117,38 +118,38 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
   };
 
   const handleResetDefaults = () => {
-    const confirmReset = window.confirm(
-      'Apakah Anda yakin ingin mengembalikan semua data pengaturan ke setelan awal pabrik (SMAN 1 Salatiga)?'
-    );
-    if (confirmReset) {
-      setNamaGuru(DEFAULT_SETTINGS.namaGuru);
-      setNip(DEFAULT_SETTINGS.nip);
-      setNamaKS(DEFAULT_SETTINGS.namaKS);
-      setJabatanKS(DEFAULT_SETTINGS.jabatanKS);
-      setNipKS(DEFAULT_SETTINGS.nipKS);
-      setKopPemprov(DEFAULT_SETTINGS.kopPemprov);
-      setKopDinas(DEFAULT_SETTINGS.kopDinas);
-      setKopSekolah(DEFAULT_SETTINGS.kopSekolah);
-      setKopAlamat(DEFAULT_SETTINGS.kopAlamat);
-      setLogoSekolah(DEFAULT_SETTINGS.logoSekolah);
-      setLogoProv(DEFAULT_SETTINGS.logoProv);
-      setKkm(DEFAULT_SETTINGS.kkm);
-      setKota(DEFAULT_SETTINGS.kota);
-      setTahunPelajaran(DEFAULT_SETTINGS.tahunPelajaran || '2025/2026');
-      setLiterasiStartAccess(DEFAULT_SETTINGS.literasiStartAccess || '00:00');
-      setLiterasiEndAccess(DEFAULT_SETTINGS.literasiEndAccess || '23:59');
-      setTugasStartAccess(DEFAULT_SETTINGS.tugasStartAccess || '00:00');
-      setTugasEndAccess(DEFAULT_SETTINGS.tugasEndAccess || '23:59');
-      setSpreadsheetUrl(DEFAULT_SETTINGS.spreadsheetUrl || '');
-      setAdminUsername(DEFAULT_SETTINGS.adminUsername || 'admin');
-      setAdminPassword(DEFAULT_SETTINGS.adminPassword || 'admin123');
-      setMataPelajaran(DEFAULT_SETTINGS.mataPelajaran || 'Informatika');
-      
-      onUpdateSettings(DEFAULT_SETTINGS);
+    setShowResetConfirm(true);
+  };
 
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 3000);
-    }
+  const handleCommitReset = () => {
+    setNamaGuru(DEFAULT_SETTINGS.namaGuru);
+    setNip(DEFAULT_SETTINGS.nip);
+    setNamaKS(DEFAULT_SETTINGS.namaKS);
+    setJabatanKS(DEFAULT_SETTINGS.jabatanKS);
+    setNipKS(DEFAULT_SETTINGS.nipKS);
+    setKopPemprov(DEFAULT_SETTINGS.kopPemprov);
+    setKopDinas(DEFAULT_SETTINGS.kopDinas);
+    setKopSekolah(DEFAULT_SETTINGS.kopSekolah);
+    setKopAlamat(DEFAULT_SETTINGS.kopAlamat);
+    setLogoSekolah(DEFAULT_SETTINGS.logoSekolah);
+    setLogoProv(DEFAULT_SETTINGS.logoProv);
+    setKkm(DEFAULT_SETTINGS.kkm);
+    setKota(DEFAULT_SETTINGS.kota);
+    setTahunPelajaran(DEFAULT_SETTINGS.tahunPelajaran || '2025/2026');
+    setLiterasiStartAccess(DEFAULT_SETTINGS.literasiStartAccess || '00:00');
+    setLiterasiEndAccess(DEFAULT_SETTINGS.literasiEndAccess || '23:59');
+    setTugasStartAccess(DEFAULT_SETTINGS.tugasStartAccess || '00:00');
+    setTugasEndAccess(DEFAULT_SETTINGS.tugasEndAccess || '23:59');
+    setSpreadsheetUrl(DEFAULT_SETTINGS.spreadsheetUrl || '');
+    setAdminUsername(DEFAULT_SETTINGS.adminUsername || 'admin');
+    setAdminPassword(DEFAULT_SETTINGS.adminPassword || 'admin123');
+    setMataPelajaran(DEFAULT_SETTINGS.mataPelajaran || 'Informatika');
+    
+    onUpdateSettings(DEFAULT_SETTINGS);
+
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
+    setShowResetConfirm(false);
   };
 
   return (
@@ -688,6 +689,12 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
                       onClick={() => {
                         const code = `function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "error", 
+      message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
+    })).setMimeType(ContentService.MimeType.JSON).setHeader("Access-Control-Allow-Origin", "*");
+  }
   var result = {};
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
@@ -719,14 +726,24 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
 }
 
 function doPost(e) {
-  var payload = JSON.parse(e.postData.contents);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "error", 
+      message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
+    })).setMimeType(ContentService.MimeType.JSON).setHeader("Access-Control-Allow-Origin", "*");
+  }
+  var payload = JSON.parse(e.postData.contents);
   for (var key in payload) {
     var sheetName = key.charAt(0).toUpperCase() + key.slice(1);
     var sheet = ss.getSheetByName(sheetName);
     if (!sheet) { sheet = ss.insertSheet(sheetName); } else { sheet.clear(); }
     var data = payload[key];
-    if (!data || data.length === 0) continue;
+    if (!data) continue;
+    if (!Array.isArray(data)) {
+      data = [data];
+    }
+    if (data.length === 0) continue;
     var headers = [];
     data.forEach(function(item) {
       Object.keys(item).forEach(function(k) {
@@ -764,6 +781,12 @@ function doPost(e) {
                   <pre className="p-3 bg-slate-900 text-slate-300 rounded-xl text-[9px] font-mono overflow-x-auto max-h-40 shadow-inner">
 {`function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "error", 
+      message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
+    })).setMimeType(ContentService.MimeType.JSON).setHeader("Access-Control-Allow-Origin", "*");
+  }
   var result = {};
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
@@ -795,14 +818,24 @@ function doPost(e) {
 }
 
 function doPost(e) {
-  var payload = JSON.parse(e.postData.contents);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "error", 
+      message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
+    })).setMimeType(ContentService.MimeType.JSON).setHeader("Access-Control-Allow-Origin", "*");
+  }
+  var payload = JSON.parse(e.postData.contents);
   for (var key in payload) {
     var sheetName = key.charAt(0).toUpperCase() + key.slice(1);
     var sheet = ss.getSheetByName(sheetName);
     if (!sheet) { sheet = ss.insertSheet(sheetName); } else { sheet.clear(); }
     var data = payload[key];
-    if (!data || data.length === 0) continue;
+    if (!data) continue;
+    if (!Array.isArray(data)) {
+      data = [data];
+    }
+    if (data.length === 0) continue;
     var headers = [];
     data.forEach(function(item) {
       Object.keys(item).forEach(function(k) {
@@ -858,6 +891,53 @@ function doPost(e) {
           </div>
         </div>
       </form>
+
+      {/* Custom Reset Settings Confirmation Modal */}
+      <AnimatePresence>
+        {showResetConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowResetConfirm(false)}
+              className="absolute inset-0 bg-black/25 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 15 }}
+              className="relative w-full max-w-sm bg-white p-6 rounded-3xl shadow-2xl border border-slate-100 z-10 space-y-4"
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center">
+                  <RotateCcw size={20} className="text-rose-600" />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Ganti ke Setelan Awal?</h3>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Apakah Anda yakin ingin mengembalikan semua data pengaturan ke setelan awal pabrik (SMAN 1 Salatiga)?
+              </p>
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer animate-none"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCommitReset}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all cursor-pointer shadow-md shadow-rose-100"
+                >
+                  Ya, Reset
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
