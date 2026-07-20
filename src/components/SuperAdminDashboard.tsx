@@ -864,7 +864,7 @@ function doPost(e) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
   }
   sheet.clear();
-  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah"];
+  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl"];
   sheet.appendRow(headers);
   if (params.teachers && params.teachers.length > 0) {
     for (var i = 0; i < params.teachers.length; i++) {
@@ -876,7 +876,8 @@ function doPost(e) {
         t.password || "",
         t.mataPelajaran || "",
         t.isApproved !== undefined ? t.isApproved : true,
-        t.asalSekolah || ""
+        t.asalSekolah || "",
+        t.spreadsheetUrl || ""
       ]);
     }
   }
@@ -919,7 +920,7 @@ function doPost(e) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
   }
   sheet.clear();
-  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah"];
+  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl"];
   sheet.appendRow(headers);
   if (params.teachers && params.teachers.length > 0) {
     for (var i = 0; i < params.teachers.length; i++) {
@@ -931,7 +932,8 @@ function doPost(e) {
         t.password || "",
         t.mataPelajaran || "",
         t.isApproved !== undefined ? t.isApproved : true,
-        t.asalSekolah || ""
+        t.asalSekolah || "",
+        t.spreadsheetUrl || ""
       ]);
     }
   }

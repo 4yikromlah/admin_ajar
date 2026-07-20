@@ -100,7 +100,15 @@ export function getGoogleAppsScriptUrl(): string {
     const settingsStr = localStorage.getItem(`${prefix}settings`);
     if (settingsStr) {
       const parsed = JSON.parse(settingsStr);
-      return parsed.spreadsheetUrl || "";
+      if (parsed.spreadsheetUrl) return parsed.spreadsheetUrl;
+    }
+    // Fallback to central teacher list spreadsheetUrl
+    if (username) {
+      const teachers = loadTeacherAccounts();
+      const me = teachers.find(t => t.username === username);
+      if (me && me.spreadsheetUrl) {
+        return me.spreadsheetUrl;
+      }
     }
   } catch (e) {}
   return "";
@@ -377,6 +385,7 @@ export const loadSettings = (): AppSettings => {
     const data = localStorage.getItem(scopedKey);
     const username = getActiveTeacherUsername();
     
+    let parsedSettings: AppSettings;
     if (!data) {
       const initialSettings = { ...DEFAULT_SETTINGS };
       if (username) {
@@ -387,15 +396,26 @@ export const loadSettings = (): AppSettings => {
           initialSettings.adminPassword = me.password || 'password';
           initialSettings.namaGuru = me.nama;
           initialSettings.mataPelajaran = me.mataPelajaran;
+          initialSettings.spreadsheetUrl = me.spreadsheetUrl || '';
           if (me.asalSekolah) {
             initialSettings.kopSekolah = me.asalSekolah;
           }
         }
       }
       localStorage.setItem(scopedKey, JSON.stringify(initialSettings));
-      return initialSettings;
+      parsedSettings = initialSettings;
+    } else {
+      parsedSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+      if (username) {
+        const teachers = loadTeacherAccounts();
+        const me = teachers.find(t => t.username === username);
+        if (me && me.spreadsheetUrl && !parsedSettings.spreadsheetUrl) {
+          parsedSettings.spreadsheetUrl = me.spreadsheetUrl;
+          localStorage.setItem(scopedKey, JSON.stringify(parsedSettings));
+        }
+      }
     }
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+    return parsedSettings;
   } catch (e) {
     console.error(`Gagal membaca localStorage [${scopedKey}]:`, e);
     return DEFAULT_SETTINGS;
@@ -417,12 +437,18 @@ export const saveSettings = (settings: AppSettings) => {
             nama: settings.namaGuru,
             password: settings.adminPassword,
             mataPelajaran: settings.mataPelajaran || "Informatika",
-            asalSekolah: settings.kopSekolah || "SMA NEGERI 1 SALATIGA"
+            asalSekolah: settings.kopSekolah || "SMA NEGERI 1 SALATIGA",
+            spreadsheetUrl: settings.spreadsheetUrl || ""
           };
         }
         return t;
       });
       saveTeacherAccounts(updated);
+
+      // Auto-push updated teacher list to central spreadsheet asynchronously!
+      pushSuperAdminToGoogleSheets().catch(e => {
+        console.warn("Gagal sinkronisasi data guru ke spreadsheet pusat:", e);
+      });
     }
   } catch (e) {
     console.error(`Gagal menyimpan ke localStorage [${scopedKey}]:`, e);
@@ -496,7 +522,7 @@ export async function saveSuperAdminSpreadsheetUrlToServer(url: string): Promise
 }
 
 export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
-  const url = getSuperAdminSpreadsheetUrl();
+  const url = await fetchSuperAdminSpreadsheetUrlFromServer();
   if (!url) return false;
 
   const db = {

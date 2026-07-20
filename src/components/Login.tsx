@@ -166,7 +166,39 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         }
         localStorage.setItem('hasEverLoggedIn', 'true');
         
-        const tSettings = getTeacherSettings(matchedTeacher.username);
+        const scopedKey = `smasa_${matchedTeacher.username}_settings`;
+        let tSettings = getTeacherSettings(matchedTeacher.username);
+        if (!tSettings) {
+          tSettings = {
+            namaGuru: matchedTeacher.nama,
+            nip: "",
+            namaKS: "",
+            jabatanKS: "",
+            nipKS: "",
+            kopPemprov: "PEMERINTAH PROVINSI",
+            kopDinas: "DINAS PENDIDIKAN",
+            kopSekolah: matchedTeacher.asalSekolah || "MGMP INFORMATIKA BONDOWOSO",
+            kopAlamat: "",
+            logoSekolah: "",
+            logoProv: "",
+            kkm: 75,
+            kota: "Salatiga",
+            tahunPelajaran: "2025/2026",
+            literasiStartAccess: "00:00",
+            literasiEndAccess: "23:59",
+            tugasStartAccess: "00:00",
+            tugasEndAccess: "23:59",
+            spreadsheetUrl: matchedTeacher.spreadsheetUrl || "",
+            adminUsername: matchedTeacher.username,
+            adminPassword: matchedTeacher.password || "password",
+            mataPelajaran: matchedTeacher.mataPelajaran || "Informatika"
+          };
+          localStorage.setItem(scopedKey, JSON.stringify(tSettings));
+        } else if (matchedTeacher.spreadsheetUrl && !tSettings.spreadsheetUrl) {
+          tSettings.spreadsheetUrl = matchedTeacher.spreadsheetUrl;
+          localStorage.setItem(scopedKey, JSON.stringify(tSettings));
+        }
+
         const sName = tSettings?.kopSekolah || matchedTeacher.asalSekolah || 'MGMP INFORMATIKA BONDOWOSO';
         const sLogo = tSettings?.logoSekolah || '';
         const sMataPelajaran = tSettings?.mataPelajaran || matchedTeacher.mataPelajaran || 'Informatika';

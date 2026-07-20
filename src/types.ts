@@ -111,5 +111,6 @@ export interface TeacherAccount {
   mataPelajaran: string;
   isApproved?: boolean;
   asalSekolah?: string;
+  spreadsheetUrl?: string;
 }
 
