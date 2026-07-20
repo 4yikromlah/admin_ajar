@@ -13,7 +13,7 @@ interface LoginProps {
   siswaList: Siswa[];
   onTeacherLoginSuccess: (username: string) => void;
   onSuperAdminLoginSuccess: () => void;
-  onStudentLoginSuccess: (siswa: Siswa) => void;
+  onStudentLoginSuccess: (siswa: Siswa, teacherUsername: string) => void;
   settings: AppSettings;
 }
 
@@ -44,6 +44,17 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
   const [siswaPassword, setSiswaPassword] = useState('');
   const [siswaError, setSiswaError] = useState('');
   const [isSiswaLoading, setIsSiswaLoading] = useState(false);
+
+  // Load teachers to populate school dropdown
+  const teachersListForSchools = loadTeacherAccounts();
+  const uniqueSchools = Array.from(new Set(teachersListForSchools.map(t => t.asalSekolah).filter(Boolean))) as string[];
+  if (uniqueSchools.length === 0) {
+    uniqueSchools.push("SMAN 1 Magetan");
+  }
+
+  const [selectedSchool, setSelectedSchool] = useState(() => {
+    return uniqueSchools.includes("SMAN 1 Magetan") ? "SMAN 1 Magetan" : (uniqueSchools[0] || "SMAN 1 Magetan");
+  });
 
   const handleGuruSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,19 +162,85 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     const cleanPassword = siswaPassword.trim();
 
     setTimeout(() => {
-      const found = siswaList.find((s) => {
-        const studentUsername = (s.username || '').trim().toLowerCase();
-        const studentNis = (s.nis || '').trim().toLowerCase();
-        const studentPassword = (s.password || 'smasa123').trim();
-        
-        return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
-               studentPassword === cleanPassword;
-      });
+      // Find teachers belonging to selected school
+      const teachers = loadTeacherAccounts();
+      const matchedTeachers = teachers.filter(
+        (t) => (t.asalSekolah || '').trim().toLowerCase() === selectedSchool.trim().toLowerCase()
+      );
+
+      let found: Siswa | null = null;
+      let matchedTeacherUsername = '';
+
+      // 1. Search among students of teachers of the selected school
+      for (const teacher of matchedTeachers) {
+        const scopedKey = `smasa_${teacher.username}_siswa`;
+        const teacherStudentsString = localStorage.getItem(scopedKey);
+        const teacherStudents: Siswa[] = teacherStudentsString
+          ? JSON.parse(teacherStudentsString)
+          : [...siswaList];
+
+        const match = teacherStudents.find((s) => {
+          const studentUsername = (s.username || '').trim().toLowerCase();
+          const studentNis = (s.nis || '').trim().toLowerCase();
+          const studentPassword = (s.password || 'smasa123').trim();
+          
+          return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
+                 studentPassword === cleanPassword;
+        });
+
+        if (match) {
+          found = match;
+          matchedTeacherUsername = teacher.username;
+          break;
+        }
+      }
+
+      // 2. If not found, search across ALL registered teachers
+      if (!found) {
+        for (const teacher of teachers) {
+          const scopedKey = `smasa_${teacher.username}_siswa`;
+          const teacherStudentsString = localStorage.getItem(scopedKey);
+          const teacherStudents: Siswa[] = teacherStudentsString
+            ? JSON.parse(teacherStudentsString)
+            : [...siswaList];
+
+          const match = teacherStudents.find((s) => {
+            const studentUsername = (s.username || '').trim().toLowerCase();
+            const studentNis = (s.nis || '').trim().toLowerCase();
+            const studentPassword = (s.password || 'smasa123').trim();
+            
+            return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
+                   studentPassword === cleanPassword;
+          });
+
+          if (match) {
+            found = match;
+            matchedTeacherUsername = teacher.username;
+            break;
+          }
+        }
+      }
+
+      // 3. Fallback to default/general list
+      if (!found) {
+        const match = siswaList.find((s) => {
+          const studentUsername = (s.username || '').trim().toLowerCase();
+          const studentNis = (s.nis || '').trim().toLowerCase();
+          const studentPassword = (s.password || 'smasa123').trim();
+          
+          return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
+                 studentPassword === cleanPassword;
+        });
+        if (match) {
+          found = match;
+          matchedTeacherUsername = '';
+        }
+      }
 
       if (found) {
-        onStudentLoginSuccess(found);
+        onStudentLoginSuccess(found, matchedTeacherUsername);
       } else {
-        setSiswaError('NIS/Username atau Kata Sandi Siswa salah.');
+        setSiswaError('NIS/Username atau Kata Sandi Siswa salah pada sekolah yang dipilih.');
         setIsSiswaLoading(false);
       }
     }, 600);
@@ -488,7 +565,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
             >
               <div className="text-center">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  Masuk sebagai Siswa SMAN 1 Magetan
+                  Masuk sebagai Siswa ({selectedSchool})
                 </span>
               </div>
 
@@ -502,6 +579,30 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                     {siswaError}
                   </motion.p>
                 )}
+
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">
+                    Pilih Asal Sekolah Siswa
+                  </label>
+                  <div className="relative">
+                    <School size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <select
+                      value={selectedSchool}
+                      onChange={(e) => setSelectedSchool(e.target.value)}
+                      className="w-full text-xs pl-11 pr-10 py-3.5 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-pink-500/10 font-semibold text-slate-700 shadow-inner appearance-none cursor-pointer"
+                      id="select-siswa-school"
+                    >
+                      {uniqueSchools.map((school) => (
+                        <option key={school} value={school}>
+                          {school}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">
+                      ▼
+                    </div>
+                  </div>
+                </div>
 
                 <div className="space-y-2">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">

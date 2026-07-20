@@ -269,8 +269,8 @@ export function saveLocalStorageData<T>(key: string, data: T[]) {
 import { TeacherAccount } from './types';
 
 export const SEED_TEACHERS: TeacherAccount[] = [
-  { id: 'T01', nama: 'Romlah, S.Kom., M.Cs.', username: 'romlah', password: 'password', mataPelajaran: 'Informatika', isApproved: true },
-  { id: 'T02', nama: 'Bambang Subianto, S.Pd.', username: 'bambang', password: 'password', mataPelajaran: 'Matematika', isApproved: true },
+  { id: 'T01', nama: 'Romlah, S.Kom., M.Cs.', username: 'romlah', password: 'password', mataPelajaran: 'Informatika', isApproved: true, asalSekolah: 'SMAN 1 Magetan' },
+  { id: 'T02', nama: 'Bambang Subianto, S.Pd.', username: 'bambang', password: 'password', mataPelajaran: 'Matematika', isApproved: true, asalSekolah: 'SMAN 1 Magetan' },
 ];
 
 export const loadTeacherAccounts = (): TeacherAccount[] => {

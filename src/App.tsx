@@ -422,7 +422,11 @@ export default function App() {
           }}
           onLogout={() => {
             localStorage.removeItem('loggedSiswa');
+            localStorage.removeItem('loggedTeacherUsername');
             setLoggedSiswa(null);
+            setTimeout(() => {
+              reloadAllStates();
+            }, 0);
           }}
           onUpdatePembelajaran={handleUpdatePembelajaran}
           onSavePresensi={handleSavePresensi}
@@ -493,8 +497,14 @@ export default function App() {
         settings={settings}
         onTeacherLoginSuccess={handleTeacherLoginSuccess}
         onSuperAdminLoginSuccess={handleSuperAdminLoginSuccess}
-        onStudentLoginSuccess={(siswa) => {
+        onStudentLoginSuccess={(siswa, teacherUsername) => {
+          if (teacherUsername) {
+            localStorage.setItem('loggedTeacherUsername', teacherUsername);
+          } else {
+            localStorage.removeItem('loggedTeacherUsername');
+          }
           localStorage.setItem('loggedSiswa', JSON.stringify(siswa));
+          reloadAllStates();
           setLoggedSiswa(siswa);
         }}
       />
