@@ -37,18 +37,82 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  const handleSaveSpreadsheetUrl = (e: React.FormEvent) => {
+  // Auto-pull data from spreadsheet on mount if URL is configured
+  React.useEffect(() => {
+    const savedUrl = getSuperAdminSpreadsheetUrl();
+    if (savedUrl) {
+      setIsSyncing(true);
+      pullSuperAdminFromGoogleSheets()
+        .then((ok) => {
+          if (ok) {
+            setTeachers(loadTeacherAccounts());
+            setSuccessMsg('Data guru terbaru berhasil disinkronkan dari Google Spreadsheet!');
+            setTimeout(() => setSuccessMsg(''), 4000);
+          }
+        })
+        .catch((err) => {
+          console.error("[Auto Pull on Mount Error]", err);
+          setErrorMsg('Gagal menyinkronkan data otomatis dari Google Spreadsheet.');
+          setTimeout(() => setErrorMsg(''), 4000);
+        })
+        .finally(() => {
+          setIsSyncing(false);
+        });
+    }
+  }, []);
+
+  const handleSaveSpreadsheetUrl = async (e: React.FormEvent) => {
     e.preventDefault();
-    saveSuperAdminSpreadsheetUrl(spreadsheetUrl);
+    const cleanUrl = spreadsheetUrl.trim();
+    saveSuperAdminSpreadsheetUrl(cleanUrl);
     setSuccessMsg('URL Spreadsheet Super Admin berhasil disimpan!');
-    setTimeout(() => setSuccessMsg(''), 4000);
+    
+    // Auto-pull immediately after saving to load existing data
+    if (cleanUrl) {
+      setIsSyncing(true);
+      setErrorMsg('');
+      try {
+        const ok = await pullSuperAdminFromGoogleSheets();
+        if (ok) {
+          setTeachers(loadTeacherAccounts());
+          setSuccessMsg('URL disimpan & data guru berhasil diunduh dari Google Spreadsheet!');
+        } else {
+          setErrorMsg('URL disimpan, namun gagal mengambil data guru. Pastikan spreadsheet Anda memiliki data.');
+        }
+      } catch (error: any) {
+        setErrorMsg(`Gagal menyinkronkan data: ${error?.message || error}`);
+      } finally {
+        setIsSyncing(false);
+        setTimeout(() => {
+          setSuccessMsg('');
+          setErrorMsg('');
+        }, 5000);
+      }
+    } else {
+      setTimeout(() => setSuccessMsg(''), 4000);
+    }
   };
 
-  const triggerAutoPush = () => {
+  const triggerAutoPush = async () => {
     if (getSuperAdminSpreadsheetUrl()) {
-      pushSuperAdminToGoogleSheets().catch(err => {
+      setIsSyncing(true);
+      setErrorMsg('');
+      try {
+        const ok = await pushSuperAdminToGoogleSheets();
+        if (ok) {
+          setSuccessMsg('Perubahan berhasil disinkronkan otomatis ke Google Spreadsheet!');
+          setTimeout(() => setSuccessMsg(''), 3000);
+        } else {
+          setErrorMsg('Gagal menyinkronkan perubahan otomatis ke Google Spreadsheet.');
+          setTimeout(() => setErrorMsg(''), 4000);
+        }
+      } catch (err: any) {
         console.error("[Auto Sync Error]", err);
-      });
+        setErrorMsg(`Gagal sinkronisasi otomatis: ${err?.message || err}`);
+        setTimeout(() => setErrorMsg(''), 4000);
+      } finally {
+        setIsSyncing(false);
+      }
     }
   };
 
