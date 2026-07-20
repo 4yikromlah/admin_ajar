@@ -453,3 +453,70 @@ export const saveRangkuman = (data: Rangkuman[]) => {
   saveLocalStorageData<Rangkuman>(getScopedKey('rangkuman'), data);
 };
 
+// ----------------------------------------------------------------------------
+// SUPER ADMIN SPREADSHEET INTEGRATION FUNCTIONS
+// ----------------------------------------------------------------------------
+export function getSuperAdminSpreadsheetUrl(): string {
+  return localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';
+}
+
+export function saveSuperAdminSpreadsheetUrl(url: string) {
+  localStorage.setItem('smasa_superadmin_spreadsheet_url', url.trim());
+}
+
+export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
+  const url = getSuperAdminSpreadsheetUrl();
+  if (!url) return false;
+
+  const db = {
+    teachers: loadTeacherAccounts(),
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(db),
+    });
+    if (!response.ok) throw new Error("Gagal mengunggah data guru ke Google Sheets Super Admin");
+    
+    let isSuccess = false;
+    try {
+      const result = await response.json();
+      isSuccess = result.status === "success";
+    } catch (e) {
+      if (response.ok) {
+        isSuccess = true;
+      }
+    }
+    return isSuccess;
+  } catch (error) {
+    console.error("[Google Sheets Super Admin Sync Error] Gagal push:", error);
+    throw error;
+  }
+}
+
+export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
+  const url = getSuperAdminSpreadsheetUrl();
+  if (!url) return false;
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+    });
+    if (!response.ok) throw new Error("Gagal mengambil data guru dari Google Sheets Super Admin");
+    const db = await response.json();
+    
+    if (db && Array.isArray(db.teachers)) {
+      saveTeacherAccounts(db.teachers);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error("[Google Sheets Super Admin Sync Error] Gagal pull:", error);
+    throw error;
+  }
+}
+

@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
-import { Users, BookOpen, Plus, Trash2, Edit2, LogOut, Key, ShieldAlert, Database, UserPlus, CheckCircle2, AlertCircle, School } from 'lucide-react';
+import { Users, BookOpen, Plus, Trash2, Edit2, LogOut, Key, ShieldAlert, Database, UserPlus, CheckCircle2, AlertCircle, School, HelpCircle, ArrowDown, ArrowUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TeacherAccount } from '../types';
-import { loadTeacherAccounts, saveTeacherAccounts, getTeacherSchoolName } from '../data';
+import { 
+  loadTeacherAccounts, 
+  saveTeacherAccounts, 
+  getTeacherSchoolName,
+  getSuperAdminSpreadsheetUrl,
+  saveSuperAdminSpreadsheetUrl,
+  pushSuperAdminToGoogleSheets,
+  pullSuperAdminFromGoogleSheets
+} from '../data';
 
 interface SuperAdminDashboardProps {
   onLogout: () => void;
@@ -23,6 +31,71 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   const [asalSekolah, setAsalSekolah] = useState('SMA Negeri 1 Salatiga');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Super Admin Spreadsheet States
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState(() => getSuperAdminSpreadsheetUrl());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  const handleSaveSpreadsheetUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveSuperAdminSpreadsheetUrl(spreadsheetUrl);
+    setSuccessMsg('URL Spreadsheet Super Admin berhasil disimpan!');
+    setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  const handlePushSuperAdmin = async () => {
+    if (!spreadsheetUrl) {
+      setErrorMsg('Masukkan URL Spreadsheet Super Admin terlebih dahulu!');
+      return;
+    }
+    setIsSyncing(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const ok = await pushSuperAdminToGoogleSheets();
+      if (ok) {
+        setSuccessMsg('Berhasil mengirimkan data guru ke Google Spreadsheet Super Admin!');
+      } else {
+        setErrorMsg('Gagal mengirimkan data ke Google Spreadsheet. Silakan periksa URL & izin Web App Anda.');
+      }
+    } catch (e: any) {
+      setErrorMsg(`Gagal sinkronisasi: ${e?.message || e}`);
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => {
+        setSuccessMsg('');
+        setErrorMsg('');
+      }, 5000);
+    }
+  };
+
+  const handlePullSuperAdmin = async () => {
+    if (!spreadsheetUrl) {
+      setErrorMsg('Masukkan URL Spreadsheet Super Admin terlebih dahulu!');
+      return;
+    }
+    setIsSyncing(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const ok = await pullSuperAdminFromGoogleSheets();
+      if (ok) {
+        setTeachers(loadTeacherAccounts());
+        setSuccessMsg('Berhasil mengunduh & menyinkronkan data guru dari Google Spreadsheet!');
+      } else {
+        setErrorMsg('Gagal mengunduh data dari Google Spreadsheet. Pastikan Spreadsheet Anda terisi data guru.');
+      }
+    } catch (e: any) {
+      setErrorMsg(`Gagal mengambil data: ${e?.message || e}`);
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => {
+        setSuccessMsg('');
+        setErrorMsg('');
+      }, 5000);
+    }
+  };
 
   const handleAddTeacher = (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,8 +322,11 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
           </div>
         </div>
 
-        {/* Action panel & list */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+        {/* Main Content Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* Left Column: Action panel & list */}
+          <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5">
             <div>
               <h2 className="text-lg font-black text-slate-800">Daftar Guru Terdaftar</h2>
@@ -567,6 +643,242 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
               </tbody>
             </table>
           </div>
+          </div>
+
+          {/* Right Column: Super Admin Spreadsheet Sync Settings */}
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6 self-start">
+            <div className="border-b border-slate-100 pb-5">
+              <div className="flex items-center gap-2 mb-1">
+                <Database className="text-rose-600" size={18} />
+                <h2 className="text-base font-black text-slate-800">Spreadsheet Super Admin</h2>
+              </div>
+              <p className="text-[11px] text-slate-500">Hubungkan data Super Admin dengan Google Spreadsheet secara terpisah untuk mengelola daftar guru.</p>
+            </div>
+
+            {/* Current Status Indicator */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100/50 flex items-center justify-between">
+              <div className="text-[10px] font-bold text-slate-500 uppercase">Status Integrasi</div>
+              {spreadsheetUrl ? (
+                <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[10px] uppercase flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Connected
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-extrabold text-[10px] uppercase flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  Lokal Browser
+                </span>
+              )}
+            </div>
+
+            {/* Form to configure the URL */}
+            <form onSubmit={handleSaveSpreadsheetUrl} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">URL Google Apps Script Web App</label>
+                <input
+                  type="url"
+                  required
+                  value={spreadsheetUrl}
+                  onChange={(e) => setSpreadsheetUrl(e.target.value)}
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-700 font-mono"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
+              >
+                Simpan Konfigurasi URL
+              </button>
+            </form>
+
+            {/* Synchronization Action Buttons */}
+            <div className="space-y-2.5 pt-2">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Aksi Sinkronisasi</div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={handlePullSuperAdmin}
+                  disabled={isSyncing || !spreadsheetUrl}
+                  className={`py-3 rounded-xl font-bold text-xs flex flex-col items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer ${
+                    !spreadsheetUrl
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                      : "bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-100"
+                  }`}
+                >
+                  <ArrowDown size={16} className={isSyncing ? "animate-bounce" : ""} />
+                  <span>Tarik Data</span>
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={handlePushSuperAdmin}
+                  disabled={isSyncing || !spreadsheetUrl}
+                  className={`py-3 rounded-xl font-bold text-xs flex flex-col items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer ${
+                    !spreadsheetUrl
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                      : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-100"
+                  }`}
+                >
+                  <ArrowUp size={16} className={isSyncing ? "animate-bounce" : ""} />
+                  <span>Kirim Data</span>
+                </button>
+              </div>
+              {isSyncing && (
+                <p className="text-[10px] text-slate-400 font-bold text-center animate-pulse">Sedang menyinkronkan data dengan Google Sheets...</p>
+              )}
+            </div>
+
+            {/* Detailed Expandable Help Accordion (Apps Script Guide) */}
+            <div className="pt-2">
+              <details className="group border border-slate-100 rounded-2xl p-4 bg-slate-50/70 transition-all">
+                <summary className="font-extrabold text-xs text-slate-700 flex items-center justify-between cursor-pointer list-none select-none">
+                  <span className="flex items-center gap-1.5">
+                    <HelpCircle size={14} className="text-rose-500" />
+                    Panduan Setup Database Cloud
+                  </span>
+                  <span className="text-slate-400 transition-transform group-open:rotate-180 font-mono text-xs">&darr;</span>
+                </summary>
+                
+                <div className="mt-4 text-[11px] text-slate-600 space-y-3 leading-relaxed border-t border-slate-200/60 pt-4">
+                  <p>Ikuti langkah berikut untuk membuat spreadsheet khusus super admin:</p>
+                  <ol className="list-decimal pl-4 space-y-1.5">
+                    <li>Buat <b>Google Spreadsheet</b> baru di Google Drive Anda.</li>
+                    <li>Buat tab lembar kerja dengan nama <code className="bg-slate-100 px-1 py-0.5 rounded text-rose-600 font-mono font-bold">Guru</code>.</li>
+                    <li>Pilih menu <b>Ekstensi</b> &rarr; <b>Apps Script</b>.</li>
+                    <li>Hapus semua kode bawaan, lalu salin dan tempel kode di bawah ini.</li>
+                  </ol>
+
+                  <div className="relative mt-2">
+                    <pre className="bg-slate-900 text-slate-200 p-3 rounded-xl text-[9px] font-mono overflow-x-auto max-h-48 leading-relaxed">
+{`function doGet(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Guru");
+  if (!sheet) {
+    return ContentService.createTextOutput(JSON.stringify({teachers: []}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var jsonArray = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = data[i][j];
+    }
+    if (obj.isApproved === "TRUE" || obj.isApproved === true || obj.isApproved === "true") {
+      obj.isApproved = true;
+    } else {
+      obj.isApproved = false;
+    }
+    jsonArray.push(obj);
+  }
+  return ContentService.createTextOutput(JSON.stringify({teachers: jsonArray}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var params = JSON.parse(e.postData.contents);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Guru");
+  if (!sheet) {
+    sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
+  }
+  sheet.clear();
+  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah"];
+  sheet.appendRow(headers);
+  if (params.teachers && params.teachers.length > 0) {
+    for (var i = 0; i < params.teachers.length; i++) {
+      var t = params.teachers[i];
+      sheet.appendRow([
+        t.id || "",
+        t.nama || "",
+        t.username || "",
+        t.password || "",
+        t.mataPelajaran || "",
+        t.isApproved !== undefined ? t.isApproved : true,
+        t.asalSekolah || ""
+      ]);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({status: "success"}))
+    .setMimeType(ContentService.MimeType.JSON);
+}`}
+                    </pre>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const code = `function doGet(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Guru");
+  if (!sheet) {
+    return ContentService.createTextOutput(JSON.stringify({teachers: []}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var jsonArray = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = data[i][j];
+    }
+    if (obj.isApproved === "TRUE" || obj.isApproved === true || obj.isApproved === "true") {
+      obj.isApproved = true;
+    } else {
+      obj.isApproved = false;
+    }
+    jsonArray.push(obj);
+  }
+  return ContentService.createTextOutput(JSON.stringify({teachers: jsonArray}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var params = JSON.parse(e.postData.contents);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Guru");
+  if (!sheet) {
+    sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
+  }
+  sheet.clear();
+  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah"];
+  sheet.appendRow(headers);
+  if (params.teachers && params.teachers.length > 0) {
+    for (var i = 0; i < params.teachers.length; i++) {
+      var t = params.teachers[i];
+      sheet.appendRow([
+        t.id || "",
+        t.nama || "",
+        t.username || "",
+        t.password || "",
+        t.mataPelajaran || "",
+        t.isApproved !== undefined ? t.isApproved : true,
+        t.asalSekolah || ""
+      ]);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({status: "success"}))
+    .setMimeType(ContentService.MimeType.JSON);
+}`;
+                        navigator.clipboard.writeText(code);
+                        setCopiedCode(true);
+                        setTimeout(() => setCopiedCode(false), 2000);
+                      }}
+                      className="absolute top-2 right-2 px-2.5 py-1 rounded bg-slate-800 text-[9px] text-white hover:bg-slate-700 font-bold cursor-pointer"
+                    >
+                      {copiedCode ? 'Disalin!' : 'Salin Kode'}
+                    </button>
+                  </div>
+
+                  <ol className="list-decimal pl-4 space-y-1.5" start={5}>
+                    <li>Klik tombol <b>Terapkan</b> (Deploy) &rarr; <b>Penerapan Baru</b> (New deployment).</li>
+                    <li>Pilih jenis penerapan: <b>Aplikasi Web</b> (Web App).</li>
+                    <li>Setel bagian 'Siapa yang memiliki akses' ke <b>Siapa saja</b> (Anyone).</li>
+                    <li>Klik <b>Terapkan</b> (Deploy) dan berikan izin akses Google Drive.</li>
+                    <li>Salin <b>URL Aplikasi Web</b> yang dihasilkan, masukkan pada form di atas, lalu klik Simpan URL.</li>
+                  </ol>
+                </div>
+              </details>
+            </div>
+          </div>
+
         </div>
 
       </div>
