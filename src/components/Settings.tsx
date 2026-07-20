@@ -693,7 +693,7 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
     return ContentService.createTextOutput(JSON.stringify({ 
       status: "error", 
       message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
-    })).setMimeType(ContentService.MimeType.JSON).setHeader("Access-Control-Allow-Origin", "*");
+    })).setMimeType(ContentService.MimeType.JSON);
   }
   var result = {};
   var sheets = ss.getSheets();
@@ -721,8 +721,7 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
     result[name] = rows;
   }
   return ContentService.createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeader("Access-Control-Allow-Origin", "*");
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
@@ -731,7 +730,7 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ 
       status: "error", 
       message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
-    })).setMimeType(ContentService.MimeType.JSON).setHeader("Access-Control-Allow-Origin", "*");
+    })).setMimeType(ContentService.MimeType.JSON);
   }
   var payload = JSON.parse(e.postData.contents);
   for (var key in payload) {
@@ -767,8 +766,7 @@ function doPost(e) {
     }
   }
   return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeader("Access-Control-Allow-Origin", "*");
+    .setMimeType(ContentService.MimeType.JSON);
 }`;
                         navigator.clipboard.writeText(code);
                         alert("Kode script berhasil disalin ke clipboard!");
@@ -785,7 +783,7 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ 
       status: "error", 
       message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
-    })).setMimeType(ContentService.MimeType.JSON).setHeader("Access-Control-Allow-Origin", "*");
+    })).setMimeType(ContentService.MimeType.JSON);
   }
   var result = {};
   var sheets = ss.getSheets();
@@ -813,8 +811,7 @@ function doPost(e) {
     result[name] = rows;
   }
   return ContentService.createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeader("Access-Control-Allow-Origin", "*");
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
@@ -823,7 +820,7 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ 
       status: "error", 
       message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
-    })).setMimeType(ContentService.MimeType.JSON).setHeader("Access-Control-Allow-Origin", "*");
+    })).setMimeType(ContentService.MimeType.JSON);
   }
   var payload = JSON.parse(e.postData.contents);
   for (var key in payload) {
@@ -859,8 +856,7 @@ function doPost(e) {
     }
   }
   return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeader("Access-Control-Allow-Origin", "*");
+    .setMimeType(ContentService.MimeType.JSON);
 }`}
                   </pre>
                 </div>
