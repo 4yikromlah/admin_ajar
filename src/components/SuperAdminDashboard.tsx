@@ -11,7 +11,8 @@ import {
   saveSuperAdminSpreadsheetUrlToServer,
   fetchSuperAdminSpreadsheetUrlFromServer,
   pushSuperAdminToGoogleSheets,
-  pullSuperAdminFromGoogleSheets
+  pullSuperAdminFromGoogleSheets,
+  fetchSuperAdminConfigFromServer
 } from '../data';
 
 interface SuperAdminDashboardProps {
@@ -31,11 +32,14 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   const [password, setPassword] = useState('');
   const [mataPelajaran, setMataPelajaran] = useState('Informatika');
   const [asalSekolah, setAsalSekolah] = useState('SMA Negeri 1 Salatiga');
+  const [email, setEmail] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Super Admin Spreadsheet States
+  // Super Admin Configuration States
   const [spreadsheetUrl, setSpreadsheetUrl] = useState(() => getSuperAdminSpreadsheetUrl());
+  const [adminPasswordState, setAdminPasswordState] = useState(() => localStorage.getItem('smasa_superadmin_password') || 'sableng212');
+  const [adminEmailState, setAdminEmailState] = useState(() => localStorage.getItem('smasa_superadmin_email') || '4ndr1saya@gmail.com');
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
@@ -44,13 +48,16 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     const initSpreadsheetData = async () => {
       setIsSyncing(true);
       try {
-        const serverUrl = await fetchSuperAdminSpreadsheetUrlFromServer();
-        if (serverUrl) {
-          setSpreadsheetUrl(serverUrl);
+        const config = await fetchSuperAdminConfigFromServer();
+        if (config) {
+          if (config.url) setSpreadsheetUrl(config.url);
+          if (config.adminPassword) setAdminPasswordState(config.adminPassword);
+          if (config.adminEmail) setAdminEmailState(config.adminEmail);
+          
           const ok = await pullSuperAdminFromGoogleSheets();
           if (ok) {
             setTeachers(loadTeacherAccounts());
-            setSuccessMsg('Data guru terbaru berhasil disinkronkan dari Google Spreadsheet!');
+            setSuccessMsg('Data konfigurasi & data guru terbaru berhasil disinkronkan dari Google Spreadsheet!');
             setTimeout(() => setSuccessMsg(''), 4000);
           }
         }
@@ -68,24 +75,26 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   const handleSaveSpreadsheetUrl = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUrl = spreadsheetUrl.trim();
+    const cleanPassword = adminPasswordState.trim();
+    const cleanEmail = adminEmailState.trim();
     
     setIsSyncing(true);
     setErrorMsg('');
-    setSuccessMsg('Menyimpan URL...');
+    setSuccessMsg('Menyimpan konfigurasi...');
 
     try {
       // Save locally and server-side
-      await saveSuperAdminSpreadsheetUrlToServer(cleanUrl);
-      setSuccessMsg('URL Spreadsheet Super Admin berhasil disimpan!');
+      await saveSuperAdminSpreadsheetUrlToServer(cleanUrl, cleanPassword, cleanEmail);
+      setSuccessMsg('Konfigurasi Super Admin berhasil disimpan!');
       
       // Auto-pull immediately after saving to load existing data
       if (cleanUrl) {
         const ok = await pullSuperAdminFromGoogleSheets();
         if (ok) {
           setTeachers(loadTeacherAccounts());
-          setSuccessMsg('URL disimpan & data guru berhasil diunduh dari Google Spreadsheet!');
+          setSuccessMsg('Konfigurasi berhasil disimpan & disinkronkan dengan Google Spreadsheet!');
         } else {
-          setErrorMsg('URL disimpan, namun gagal mengambil data guru. Pastikan spreadsheet Anda memiliki data.');
+          setErrorMsg('Konfigurasi disimpan, namun gagal mengambil data guru dari spreadsheet. Pastikan spreadsheet Anda memiliki format yang benar.');
         }
       }
     } catch (error: any) {
@@ -180,7 +189,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setErrorMsg('');
     setSuccessMsg('');
 
-    if (!nama.trim() || !username.trim() || !password.trim() || !mataPelajaran.trim() || !asalSekolah.trim()) {
+    if (!nama.trim() || !username.trim() || !password.trim() || !mataPelajaran.trim() || !asalSekolah.trim() || !email.trim()) {
       setErrorMsg('Semua kolom wajib diisi!');
       return;
     }
@@ -206,6 +215,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       mataPelajaran: mataPelajaran.trim(),
       isApproved: true,
       asalSekolah: asalSekolah.trim(),
+      email: email.trim(),
     };
 
     const updated = [...teachers, newTeacher];
@@ -219,6 +229,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setPassword('');
     setMataPelajaran('Informatika');
     setAsalSekolah('SMA Negeri 1 Salatiga');
+    setEmail('');
     setShowAddForm(false);
     setSuccessMsg('Akun guru baru berhasil ditambahkan!');
     setTimeout(() => setSuccessMsg(''), 4000);
@@ -230,7 +241,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setErrorMsg('');
     setSuccessMsg('');
 
-    if (!editingTeacher.nama.trim() || !editingTeacher.username.trim() || !editingTeacher.mataPelajaran.trim() || !editingTeacher.password?.trim() || !editingTeacher.asalSekolah?.trim()) {
+    if (!editingTeacher.nama.trim() || !editingTeacher.username.trim() || !editingTeacher.mataPelajaran.trim() || !editingTeacher.password?.trim() || !editingTeacher.asalSekolah?.trim() || !editingTeacher.email?.trim()) {
       setErrorMsg('Semua kolom wajib diisi!');
       return;
     }
@@ -438,7 +449,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                 <span className="w-2 h-2 bg-rose-600 rounded-full"></span> Form Pendaftaran Guru Baru
               </h3>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Lengkap Guru</label>
                   <input
@@ -498,6 +509,18 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                     className="w-full text-xs px-3.5 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-700 font-semibold"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Email Aktif</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Contoh: romlah@gmail.com"
+                    className="w-full text-xs px-3.5 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-700 font-semibold"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -530,7 +553,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                 <span className="w-2 h-2 bg-amber-500 rounded-full"></span> Edit Kredensial & Detail Akun Guru
               </h3>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Lengkap Guru</label>
                   <input
@@ -582,6 +605,17 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                     required
                     value={editingTeacher.asalSekolah || ''}
                     onChange={(e) => setEditingTeacher({ ...editingTeacher, asalSekolah: e.target.value })}
+                    className="w-full text-xs px-3.5 py-2 rounded-xl border border-amber-200 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-700 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Email Aktif</label>
+                  <input
+                    type="email"
+                    required
+                    value={editingTeacher.email || ''}
+                    onChange={(e) => setEditingTeacher({ ...editingTeacher, email: e.target.value })}
                     className="w-full text-xs px-3.5 py-2 rounded-xl border border-amber-200 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-700 font-semibold"
                   />
                 </div>
@@ -753,7 +787,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
             </div>
 
             {/* Form to configure the URL */}
-            <form onSubmit={handleSaveSpreadsheetUrl} className="space-y-3">
+            <form onSubmit={handleSaveSpreadsheetUrl} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">URL Google Apps Script Web App</label>
                 <input
@@ -765,11 +799,36 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                   className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-700 font-mono"
                 />
               </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Kata Sandi Super Admin</label>
+                <input
+                  type="password"
+                  required
+                  value={adminPasswordState}
+                  onChange={(e) => setAdminPasswordState(e.target.value)}
+                  placeholder="Sandi default: sableng212"
+                  className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-700 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Email Pemulihan Super Admin</label>
+                <input
+                  type="email"
+                  required
+                  value={adminEmailState}
+                  onChange={(e) => setAdminEmailState(e.target.value)}
+                  placeholder="Contoh: 4yik.romlah@gmail.com"
+                  className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-700"
+                />
+              </div>
+
               <button
                 type="submit"
                 className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
               >
-                Simpan Konfigurasi URL
+                Simpan Konfigurasi & Sandi
               </button>
             </form>
 
@@ -864,7 +923,7 @@ function doPost(e) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
   }
   sheet.clear();
-  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl"];
+  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email"];
   sheet.appendRow(headers);
   if (params.teachers && params.teachers.length > 0) {
     for (var i = 0; i < params.teachers.length; i++) {
@@ -877,7 +936,8 @@ function doPost(e) {
         t.mataPelajaran || "",
         t.isApproved !== undefined ? t.isApproved : true,
         t.asalSekolah || "",
-        t.spreadsheetUrl || ""
+        t.spreadsheetUrl || "",
+        t.email || ""
       ]);
     }
   }
@@ -920,7 +980,7 @@ function doPost(e) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
   }
   sheet.clear();
-  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl"];
+  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email"];
   sheet.appendRow(headers);
   if (params.teachers && params.teachers.length > 0) {
     for (var i = 0; i < params.teachers.length; i++) {
@@ -933,7 +993,8 @@ function doPost(e) {
         t.mataPelajaran || "",
         t.isApproved !== undefined ? t.isApproved : true,
         t.asalSekolah || "",
-        t.spreadsheetUrl || ""
+        t.spreadsheetUrl || "",
+        t.email || ""
       ]);
     }
   }

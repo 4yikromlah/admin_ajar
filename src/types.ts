@@ -112,5 +112,6 @@ export interface TeacherAccount {
   isApproved?: boolean;
   asalSekolah?: string;
   spreadsheetUrl?: string;
+  email?: string;
 }
 

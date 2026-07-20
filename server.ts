@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,14 +14,19 @@ const CONFIG_FILE = path.join(__dirname, 'spreadsheet_config.json');
 
 app.use(express.json());
 
-// Load saved spreadsheet URL on startup
+// Load saved config on startup
 let spreadsheetUrl = '';
+let adminPassword = 'sableng212';
+let adminEmail = '4ndr1saya@gmail.com';
+
 try {
   if (fs.existsSync(CONFIG_FILE)) {
     const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
     spreadsheetUrl = parsed.url || '';
-    console.log('[Server] Loaded saved spreadsheet URL:', spreadsheetUrl);
+    if (parsed.adminPassword) adminPassword = parsed.adminPassword;
+    if (parsed.adminEmail) adminEmail = parsed.adminEmail;
+    console.log('[Server] Loaded config successfully. URL:', spreadsheetUrl, 'Email:', adminEmail);
   }
 } catch (e) {
   console.error('[Server] Failed to read CONFIG_FILE:', e);
@@ -30,23 +36,202 @@ try {
 // API ROUTES (Must be defined BEFORE Vite middleware)
 // ----------------------------------------------------------------------------
 app.get('/api/superadmin-url', (req, res) => {
-  res.json({ url: spreadsheetUrl });
+  res.json({ 
+    url: spreadsheetUrl,
+    adminPassword,
+    adminEmail
+  });
 });
 
 app.post('/api/superadmin-url', (req, res) => {
-  const { url } = req.body;
-  if (typeof url !== 'string') {
-    return res.status(400).json({ error: 'Invalid URL parameter' });
+  const { url, adminPassword: newPassword, adminEmail: newEmail } = req.body;
+  
+  if (url !== undefined) {
+    spreadsheetUrl = url.trim();
   }
-  spreadsheetUrl = url.trim();
+  if (newPassword !== undefined) {
+    adminPassword = newPassword.trim();
+  }
+  if (newEmail !== undefined) {
+    adminEmail = newEmail.trim();
+  }
+
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify({ url: spreadsheetUrl }), 'utf-8');
-    console.log('[Server] Saved new spreadsheet URL:', spreadsheetUrl);
-    res.json({ status: 'success', url: spreadsheetUrl });
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify({ 
+      url: spreadsheetUrl, 
+      adminPassword, 
+      adminEmail 
+    }), 'utf-8');
+    console.log('[Server] Saved new configuration successfully');
+    res.json({ 
+      status: 'success', 
+      url: spreadsheetUrl, 
+      adminPassword, 
+      adminEmail 
+    });
   } catch (e) {
     console.error('[Server] Failed to write CONFIG_FILE:', e);
     res.status(500).json({ error: 'Failed to write config' });
   }
+});
+
+// Forgot Password Endpoint
+app.post('/api/forgot-password', async (req, res) => {
+  const { username, email, appUrl, clientVerified, clientName } = req.body;
+  if (!username || !email) {
+    return res.status(400).json({ error: 'Username dan Email wajib diisi!' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase();
+  const cleanEmail = email.trim().toLowerCase();
+
+  let targetEmail = '';
+  let targetName = '';
+  let isMatched = false;
+
+  // 1. Check if Super Admin
+  if (cleanUsername === 'admin') {
+    if (cleanEmail === adminEmail.toLowerCase()) {
+      targetEmail = adminEmail;
+      targetName = 'Super Admin';
+      isMatched = true;
+    }
+  } else {
+    // 2. Check Teacher Accounts using central spreadsheet
+    if (spreadsheetUrl) {
+      try {
+        const response = await fetch(spreadsheetUrl, { method: 'GET' });
+        if (response.ok) {
+          const db = await response.json();
+          if (db && Array.isArray(db.teachers)) {
+            const matchedTeacher = db.teachers.find(
+              (t: any) => t.username.trim().toLowerCase() === cleanUsername && 
+                          (t.email || '').trim().toLowerCase() === cleanEmail
+            );
+            if (matchedTeacher) {
+              targetEmail = matchedTeacher.email || cleanEmail;
+              targetName = matchedTeacher.nama;
+              isMatched = true;
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Forgot Password] Central sheet fetch failed:', err);
+      }
+    }
+
+    // 3. Client Verification Fallback (for offline or local accounts)
+    if (!isMatched && clientVerified === true) {
+      targetEmail = cleanEmail;
+      targetName = clientName || cleanUsername;
+      isMatched = true;
+    }
+  }
+
+  if (!isMatched) {
+    return res.status(404).json({ error: 'Akun dengan username dan email tersebut tidak ditemukan!' });
+  }
+
+  // Generate a reset token/link
+  const token = 'RESET_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+  const baseOrigin = appUrl || req.headers.referer || req.headers.origin || 'http://localhost:3000';
+  const resetLink = `${baseOrigin}${baseOrigin.endsWith('/') ? '' : '/'}?resetToken=${token}&username=${encodeURIComponent(cleanUsername)}`;
+
+  console.log(`[Forgot Password] Reset link generated for ${cleanUsername}: ${resetLink}`);
+
+  // SMTP Settings
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpPort = process.env.SMTP_PORT;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  const smtpFrom = process.env.SMTP_FROM || smtpUser;
+
+  let emailSent = false;
+  let emailError = '';
+
+  if (smtpHost && smtpPort && smtpUser && smtpPass) {
+    try {
+      const nodemailer = await import('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(smtpPort),
+        secure: parseInt(smtpPort) === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      await transporter.sendMail({
+        from: `"SMASA Online" <${smtpFrom}>`,
+        to: targetEmail,
+        subject: 'Atur Ulang Kata Sandi Akun SMASA Online',
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h2 style="color: #4f46e5; font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.025em;">SMASA Online</h2>
+              <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; font-weight: 700;">Portal Pembelajaran & Penilaian</span>
+            </div>
+            <hr style="border: none; border-top: 1px solid #f1f5f9; margin-bottom: 24px;" />
+            <p style="font-size: 15px; color: #334155; line-height: 1.6;">Halo <strong>${targetName}</strong>,</p>
+            <p style="font-size: 15px; color: #334155; line-height: 1.6;">Kami menerima permintaan untuk mengatur ulang kata sandi akun SMASA Online Anda.</p>
+            <p style="font-size: 15px; color: #334155; line-height: 1.6; margin-bottom: 28px;">Silakan klik tombol di bawah ini untuk mengatur ulang kata sandi Anda dengan yang baru:</p>
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${resetLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 14px; display: inline-block; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);">Atur Ulang Kata Sandi Baru</a>
+            </div>
+            <p style="color: #64748b; font-size: 12px; line-height: 1.6; background-color: #f8fafc; padding: 12px; border-radius: 8px;">Jika Anda tidak meminta pengaturan ulang ini, silakan abaikan email ini dengan aman. Tautan ini bersifat privat dan hanya berlaku sementara.</p>
+            <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+            <p style="color: #94a3b8; font-size: 11px; word-break: break-all; line-height: 1.5;">Apabila tombol di atas tidak bekerja, silakan salin dan tempel tautan berikut ke browser Anda:<br/><a href="${resetLink}" style="color: #4f46e5; text-decoration: underline;">${resetLink}</a></p>
+          </div>
+        `,
+      });
+      emailSent = true;
+    } catch (err: any) {
+      console.error('[Forgot Password] Nodemailer SMTP Error:', err);
+      emailError = err?.message || 'SMTP delivery failure';
+    }
+  }
+
+  return res.json({
+    success: true,
+    message: emailSent 
+      ? 'Link reset password berhasil dikirim ke email terdaftar!' 
+      : 'Tautan reset password berhasil digenerasi di sistem sandbox!',
+    emailSent,
+    emailError,
+    resetLink,
+    username: cleanUsername,
+    token
+  });
+});
+
+// Reset Password Endpoint
+app.post('/api/reset-password', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username dan Password baru wajib diisi!' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase();
+
+  if (cleanUsername === 'admin') {
+    adminPassword = password.trim();
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ 
+        url: spreadsheetUrl, 
+        adminPassword, 
+        adminEmail 
+      }), 'utf-8');
+      console.log('[Server] Super Admin password reset successfully.');
+      return res.json({ status: 'success', message: 'Password Super Admin berhasil diperbarui!' });
+    } catch (e) {
+      console.error('[Server] Failed to write CONFIG_FILE on reset:', e);
+      return res.status(500).json({ error: 'Gagal memperbarui password di server' });
+    }
+  }
+
+  // Teachers are updated client-side and synced via central spreadsheet
+  return res.json({ status: 'success', message: 'Password divalidasi' });
 });
 
 // Health check
@@ -80,3 +265,4 @@ async function startServer() {
 }
 
 startServer();
+

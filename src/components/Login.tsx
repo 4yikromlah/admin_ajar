@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School } from 'lucide-react';
+import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School, Mail, ArrowLeft, Lock } from 'lucide-react';
 import { Siswa, AppSettings, TeacherAccount } from '../types';
 import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchSuperAdminSpreadsheetUrlFromServer } from '../data';
 
@@ -56,9 +56,34 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
   const [regPassword, setRegPassword] = useState('');
   const [regMataPelajaran, setRegMataPelajaran] = useState('Informatika');
   const [regAsalSekolah, setRegAsalSekolah] = useState('');
+  const [regEmail, setRegEmail] = useState('');
   const [regError, setRegError] = useState('');
   const [regSuccess, setRegSuccess] = useState('');
   const [isRegLoading, setIsRegLoading] = useState(false);
+
+  // State Lupa Password
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotUsername, setForgotUsername] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
+  const [simulatedResetLink, setSimulatedResetLink] = useState('');
+
+  // State Atur Ulang Password (Reset Mode)
+  const [resetToken, setResetToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('resetToken');
+  });
+  const [resetUsername, setResetUsername] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('username');
+  });
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [isResetLoading, setIsResetLoading] = useState(false);
 
   // State Login Siswa
   const [siswaUsername, setSiswaUsername] = useState('');
@@ -128,7 +153,8 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
     setTimeout(() => {
       // 1. Check Super Admin Credentials
-      if (cleanUsername === 'admin' && guruPassword === 'sableng212') {
+      const allowedAdminPassword = localStorage.getItem('smasa_superadmin_password') || 'sableng212';
+      if (cleanUsername === 'admin' && guruPassword === allowedAdminPassword) {
         localStorage.setItem('hasEverLoggedIn', 'true');
         
         const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
@@ -194,7 +220,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
             mataPelajaran: matchedTeacher.mataPelajaran || "Informatika"
           };
           localStorage.setItem(scopedKey, JSON.stringify(tSettings));
-        } else if (matchedTeacher.spreadsheetUrl && !tSettings.spreadsheetUrl) {
+        } else if (matchedTeacher.spreadsheetUrl && matchedTeacher.spreadsheetUrl !== tSettings.spreadsheetUrl) {
           tSettings.spreadsheetUrl = matchedTeacher.spreadsheetUrl;
           localStorage.setItem(scopedKey, JSON.stringify(tSettings));
         }
@@ -271,8 +297,8 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
     const cleanUsername = regUsername.trim().toLowerCase();
 
-    if (!regNama.trim() || !cleanUsername || !regPassword.trim() || !regMataPelajaran.trim() || !regAsalSekolah.trim()) {
-      setRegError('Semua kolom wajib diisi termasuk Asal Sekolah!');
+    if (!regNama.trim() || !cleanUsername || !regPassword.trim() || !regMataPelajaran.trim() || !regAsalSekolah.trim() || !regEmail.trim()) {
+      setRegError('Semua kolom wajib diisi termasuk Email dan Asal Sekolah!');
       setIsRegLoading(false);
       return;
     }
@@ -292,6 +318,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         mataPelajaran: regMataPelajaran.trim(),
         isApproved: false, // Wait for approval!
         asalSekolah: regAsalSekolah.trim(),
+        email: regEmail.trim(),
       };
 
       await registerTeacherAndSync(newTeacher);
@@ -308,10 +335,161 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       setRegPassword('');
       setRegMataPelajaran('Informatika');
       setRegAsalSekolah('');
+      setRegEmail('');
     } catch (error: any) {
       setRegError(error?.message || 'Gagal mengirimkan pendaftaran ke database.');
     } finally {
       setIsRegLoading(false);
+    }
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotSuccess('');
+    setSimulatedResetLink('');
+    setIsForgotLoading(true);
+
+    const cleanUsername = forgotUsername.trim().toLowerCase();
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+
+    if (!cleanUsername || !cleanEmail) {
+      setForgotError('Username dan Email wajib diisi!');
+      setIsForgotLoading(false);
+      return;
+    }
+
+    try {
+      // For local fallback: check if we have a match in teachersList
+      let clientVerified = false;
+      let clientName = '';
+      if (cleanUsername !== 'admin') {
+        const localTeacher = teachersList.find(
+          t => t.username === cleanUsername && (t.email || '').trim().toLowerCase() === cleanEmail
+        );
+        if (localTeacher) {
+          clientVerified = true;
+          clientName = localTeacher.nama;
+        }
+      }
+
+      const response = await fetch('/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: cleanUsername,
+          email: cleanEmail,
+          appUrl: window.location.origin,
+          clientVerified,
+          clientName
+        })
+      });
+
+      const resData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(resData.error || 'Gagal mengirimkan permintaan reset kata sandi.');
+      }
+
+      setForgotSuccess(resData.message);
+      if (resData.resetLink && !resData.emailSent) {
+        setSimulatedResetLink(resData.resetLink);
+      }
+    } catch (err: any) {
+      setForgotError(err?.message || 'Gagal memproses permintaan lupa password.');
+    } finally {
+      setIsForgotLoading(false);
+    }
+  };
+
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError('');
+    setResetSuccess('');
+    setIsResetLoading(true);
+
+    if (!newPassword || !confirmPassword) {
+      setResetError('Semua kolom wajib diisi!');
+      setIsResetLoading(false);
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setResetError('Kata sandi baru minimal 6 karakter!');
+      setIsResetLoading(false);
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setResetError('Konfirmasi kata sandi baru tidak cocok!');
+      setIsResetLoading(false);
+      return;
+    }
+
+    try {
+      const uName = resetUsername || '';
+      const cleanUsername = uName.trim().toLowerCase();
+
+      // Send to server
+      const response = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: cleanUsername,
+          password: newPassword,
+          token: resetToken
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Gagal mengatur ulang kata sandi.');
+      }
+
+      // If it's a teacher, also update local storage & sync back
+      if (cleanUsername !== 'admin') {
+        const updated = teachersList.map(t => {
+          if (t.username === cleanUsername) {
+            return { ...t, password: newPassword };
+          }
+          return t;
+        });
+        saveTeacherAccounts(updated);
+        setTeachersList(updated);
+
+        // Also update scoped teacher settings
+        const scopedKey = `smasa_${cleanUsername}_settings`;
+        const localSettingsStr = localStorage.getItem(scopedKey);
+        if (localSettingsStr) {
+          try {
+            const parsed = JSON.parse(localSettingsStr);
+            parsed.adminPassword = newPassword;
+            localStorage.setItem(scopedKey, JSON.stringify(parsed));
+          } catch (err) {}
+        }
+
+        // Try pushing updated accounts to the central spreadsheet (if exists)
+        try {
+          const { pushSuperAdminToGoogleSheets } = await import('../data');
+          await pushSuperAdminToGoogleSheets();
+        } catch (syncErr) {
+          console.error('[Reset Sync Alert]', syncErr);
+        }
+      } else {
+        // Super Admin password was successfully changed in the server file, 
+        // let's also update the browser cache
+        localStorage.setItem('smasa_superadmin_password', newPassword);
+      }
+
+      setResetSuccess('Kata sandi berhasil diperbarui! Silakan kembali ke halaman login untuk masuk.');
+      
+      // Clear inputs
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setResetError(err?.message || 'Gagal mengubah kata sandi.');
+    } finally {
+      setIsResetLoading(false);
     }
   };
 
@@ -532,8 +710,236 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
           </div>
         </div>
 
-        {/* Tab Selector (Neumorphic Style) */}
-        <div className="p-1.5 rounded-2xl bg-slate-200/50 neu-inset flex relative overflow-hidden" id="login-role-selector">
+        {resetToken && resetUsername ? (
+          <div className="space-y-6">
+            <div className="text-center">
+              <span className="px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-700 text-[10px] font-black uppercase tracking-widest block w-fit mx-auto">
+                Pemulihan Akun
+              </span>
+              <h3 className="text-lg font-black text-slate-800 tracking-tight mt-2">
+                Atur Ulang Kata Sandi Baru
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Username: <span className="text-indigo-600 font-mono font-bold">{resetUsername}</span>
+              </p>
+            </div>
+
+            <form onSubmit={handleResetSubmit} className="space-y-5">
+              {resetError && (
+                <p className="text-xs font-bold text-rose-600 text-center bg-rose-50 p-3 rounded-xl border border-rose-100 shadow-sm">
+                  {resetError}
+                </p>
+              )}
+
+              {resetSuccess && (
+                <div className="text-center space-y-4">
+                  <p className="text-xs font-bold text-emerald-700 bg-emerald-50 p-3 rounded-xl border border-emerald-100 shadow-sm">
+                    {resetSuccess}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.history.replaceState({}, document.title, window.location.pathname);
+                      setResetToken(null);
+                      setResetUsername(null);
+                      setForgotMode(false);
+                    }}
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-black uppercase tracking-wider shadow-md hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    Ke Halaman Login
+                  </button>
+                </div>
+              )}
+
+              {!resetSuccess && (
+                <>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">
+                      Kata Sandi Baru
+                    </label>
+                    <div className="relative">
+                      <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="password"
+                        required
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Minimal 6 karakter"
+                        className="w-full text-xs pl-11 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 font-mono text-slate-700 placeholder-slate-400 shadow-inner"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">
+                      Konfirmasi Kata Sandi Baru
+                    </label>
+                    <div className="relative">
+                      <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="password"
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Ulangi kata sandi baru"
+                        className="w-full text-xs pl-11 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 font-mono text-slate-700 placeholder-slate-400 shadow-inner"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isResetLoading}
+                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs uppercase tracking-wider shadow-md hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-75"
+                  >
+                    {isResetLoading ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <Check size={16} />
+                        <span>Simpan & Perbarui Kata Sandi</span>
+                      </>
+                    )}
+                  </button>
+                  
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        setResetToken(null);
+                        setResetUsername(null);
+                      }}
+                      className="text-xs text-slate-500 hover:text-slate-700 font-bold hover:underline"
+                    >
+                      Batal & Kembali
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          </div>
+        ) : forgotMode ? (
+          <div className="space-y-6">
+            <div className="text-center">
+              <span className="px-3 py-1 rounded-full bg-rose-500/10 text-rose-700 text-[10px] font-black uppercase tracking-widest block w-fit mx-auto">
+                Pemulihan Akses
+              </span>
+              <h3 className="text-lg font-black text-slate-800 tracking-tight leading-tight mt-2">
+                Lupa Kata Sandi Akun?
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Masukkan username dan email terdaftar Anda. Sistem akan memverifikasi dan mengirimkan link reset.
+              </p>
+            </div>
+
+            <form onSubmit={handleForgotSubmit} className="space-y-5">
+              {forgotError && (
+                <p className="text-xs font-bold text-rose-600 text-center bg-rose-50 p-3 rounded-xl border border-rose-100 shadow-sm">
+                  {forgotError}
+                </p>
+              )}
+
+              {forgotSuccess && (
+                <div className="space-y-4">
+                  <p className="text-xs font-bold text-emerald-700 bg-emerald-50 p-3 rounded-xl border border-emerald-100 shadow-sm text-center">
+                    {forgotSuccess}
+                  </p>
+                  
+                  {simulatedResetLink && (
+                    <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-900 space-y-2 text-xs">
+                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-700">
+                        <span className="w-2 h-2 bg-indigo-500 rounded-full animate-ping"></span>
+                        Sandbox Simulation
+                      </div>
+                      <p className="font-semibold text-slate-600 leading-normal">
+                        Karena Anda menjalankan aplikasi dalam sandbox preview, Anda dapat mengklik tombol simulasi di bawah ini untuk langsung mereset password tanpa membuka email:
+                      </p>
+                      <a
+                        href={simulatedResetLink}
+                        className="block w-full py-2.5 text-center bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors shadow-sm mt-1 text-center"
+                      >
+                        Buka Link Atur Ulang Kata Sandi
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!forgotSuccess && (
+                <>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">
+                      Username Akun Anda
+                    </label>
+                    <div className="relative">
+                      <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        value={forgotUsername}
+                        onChange={(e) => setForgotUsername(e.target.value)}
+                        placeholder="Contoh: admin atau romlah"
+                        className="w-full text-xs pl-11 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 font-semibold text-slate-700 placeholder-slate-400 shadow-inner"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">
+                      Alamat Email Terdaftar
+                    </label>
+                    <div className="relative">
+                      <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="email"
+                        required
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="Contoh: 4ndr1saya@gmail.com"
+                        className="w-full text-xs pl-11 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 font-semibold text-slate-700 placeholder-slate-400 shadow-inner"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isForgotLoading}
+                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs uppercase tracking-wider shadow-md hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-75"
+                  >
+                    {isForgotLoading ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <Mail size={16} />
+                        <span>Kirim Link Atur Ulang Password</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotMode(false);
+                    setForgotError('');
+                    setForgotSuccess('');
+                    setSimulatedResetLink('');
+                  }}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer flex items-center justify-center gap-1.5 mx-auto"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Kembali ke Halaman Login</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <>
+            {/* Tab Selector (Neumorphic Style) */}
+            <div className="p-1.5 rounded-2xl bg-slate-200/50 neu-inset flex relative overflow-hidden" id="login-role-selector">
           <button
             onClick={() => setRole('guru')}
             className={`flex-1 py-3 px-4 rounded-xl text-xs font-black tracking-wider uppercase transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer relative z-10 ${
@@ -622,6 +1028,21 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                           className="w-full text-xs pl-11 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 font-mono text-slate-700 placeholder-slate-400 shadow-inner"
                           id="input-guru-password"
                         />
+                      </div>
+                      <div className="flex justify-end pr-1 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotMode(true);
+                            setForgotError('');
+                            setForgotSuccess('');
+                            setSimulatedResetLink('');
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-blue-600 font-bold hover:underline cursor-pointer"
+                          id="btn-forgot-password-trigger"
+                        >
+                          Lupa kata sandi?
+                        </button>
                       </div>
                     </div>
 
@@ -778,6 +1199,24 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                       </div>
                     </div>
 
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">
+                        Alamat Email Aktif
+                      </label>
+                      <div className="relative">
+                        <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="email"
+                          required
+                          value={regEmail}
+                          onChange={(e) => setRegEmail(e.target.value)}
+                          placeholder="Contoh: romlah@gmail.com"
+                          className="w-full text-xs pl-11 pr-4 py-3 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 font-semibold text-slate-700 placeholder-slate-400 shadow-inner"
+                          id="input-reg-email"
+                        />
+                      </div>
+                    </div>
+
                     <button
                       type="submit"
                       disabled={isRegLoading}
@@ -918,6 +1357,8 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
             </motion.div>
           )}
         </AnimatePresence>
+        </>
+        )}
 
         <div className="text-center pt-2">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">

@@ -39,6 +39,8 @@ import {
   saveRangkuman,
   pushToGoogleSheets,
   pullFromGoogleSheets,
+  saveTeacherAccounts,
+  fetchSuperAdminSpreadsheetUrlFromServer,
 } from './data';
 
 export default function App() {
@@ -127,6 +129,32 @@ export default function App() {
       syncPush();
     }
   };
+
+  // Sinkronisasi daftar guru dari spreadsheet pusat pada saat mount
+  React.useEffect(() => {
+    const syncTeacherListAndSettingsOnMount = async () => {
+      try {
+        const url = await fetchSuperAdminSpreadsheetUrlFromServer();
+        if (url) {
+          const response = await fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+          });
+          if (response.ok) {
+            const db = await response.json();
+            if (db && Array.isArray(db.teachers)) {
+              saveTeacherAccounts(db.teachers);
+              // Segarkan settings agar loadSettings() membaca spreadsheetUrl terbaru yang diperbarui dari device lain
+              setSettings(loadSettings());
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[App Sync Teacher List Error] Gagal sinkronisasi data guru:", err);
+      }
+    };
+    syncTeacherListAndSettingsOnMount();
+  }, []);
 
   // Sinkronisasi otomatis saat aplikasi pertama kali dimuat
   React.useEffect(() => {

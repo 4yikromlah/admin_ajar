@@ -409,7 +409,7 @@ export const loadSettings = (): AppSettings => {
       if (username) {
         const teachers = loadTeacherAccounts();
         const me = teachers.find(t => t.username === username);
-        if (me && me.spreadsheetUrl && !parsedSettings.spreadsheetUrl) {
+        if (me && me.spreadsheetUrl && me.spreadsheetUrl !== parsedSettings.spreadsheetUrl) {
           parsedSettings.spreadsheetUrl = me.spreadsheetUrl;
           localStorage.setItem(scopedKey, JSON.stringify(parsedSettings));
         }
@@ -490,33 +490,47 @@ export function saveSuperAdminSpreadsheetUrl(url: string) {
   localStorage.setItem('smasa_superadmin_spreadsheet_url', url.trim());
 }
 
-export async function fetchSuperAdminSpreadsheetUrlFromServer(): Promise<string> {
+export async function fetchSuperAdminConfigFromServer(): Promise<{ url: string; adminPassword?: string; adminEmail?: string } | null> {
   try {
     const response = await fetch('/api/superadmin-url');
     if (response.ok) {
       const data = await response.json();
-      if (data && data.url) {
-        localStorage.setItem('smasa_superadmin_spreadsheet_url', data.url);
-        return data.url;
+      if (data) {
+        if (data.url) localStorage.setItem('smasa_superadmin_spreadsheet_url', data.url);
+        if (data.adminPassword) localStorage.setItem('smasa_superadmin_password', data.adminPassword);
+        if (data.adminEmail) localStorage.setItem('smasa_superadmin_email', data.adminEmail);
+        return data;
       }
     }
   } catch (e) {
-    console.error("Gagal mengambil URL spreadsheet dari server:", e);
+    console.error("Gagal mengambil config superadmin dari server:", e);
   }
-  return localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';
+  return null;
 }
 
-export async function saveSuperAdminSpreadsheetUrlToServer(url: string): Promise<boolean> {
+export async function fetchSuperAdminSpreadsheetUrlFromServer(): Promise<string> {
+  const config = await fetchSuperAdminConfigFromServer();
+  return config?.url || localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';
+}
+
+export async function saveSuperAdminSpreadsheetUrlToServer(url: string, adminPassword?: string, adminEmail?: string): Promise<boolean> {
   localStorage.setItem('smasa_superadmin_spreadsheet_url', url.trim());
+  if (adminPassword) localStorage.setItem('smasa_superadmin_password', adminPassword.trim());
+  if (adminEmail) localStorage.setItem('smasa_superadmin_email', adminEmail.trim());
+  
   try {
     const response = await fetch('/api/superadmin-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: url.trim() }),
+      body: JSON.stringify({ 
+        url: url.trim(),
+        adminPassword: adminPassword?.trim(),
+        adminEmail: adminEmail?.trim()
+      }),
     });
     return response.ok;
   } catch (e) {
-    console.error("Gagal menyimpan URL spreadsheet ke server:", e);
+    console.error("Gagal menyimpan config superadmin ke server:", e);
     return false;
   }
 }
