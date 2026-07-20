@@ -504,6 +504,7 @@ export default function KelolaSiswa({
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                     />
+                    <p className="text-[9px] text-slate-400 mt-1">Sandi bebas, tidak harus berupa NISN (Default: smasa123)</p>
                   </div>
                 </div>
 

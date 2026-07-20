@@ -454,10 +454,10 @@ export default function KelolaPembelajaran({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-4">
                 <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5 text-emerald-600">
                   <CheckCircle2 size={15} className="text-emerald-500" />
-                  {expandedMateri.jenis === 'Literasi' ? 'Laporan Penyelesaian Literasi Siswa' : 'Informasi Tambahan'}
+                  {expandedMateri.jenis === 'Literasi' ? 'Laporan Penyelesaian Literasi Siswa' : expandedMateri.jenis === 'Tugas/Tes' ? 'Laporan Penyelesaian Tugas / Kuis Siswa' : 'Informasi Tambahan'}
                 </h3>
                 
-                {expandedMateri.jenis === 'Literasi' && submissions.length > 0 && (
+                {(expandedMateri.jenis === 'Literasi' || expandedMateri.jenis === 'Tugas/Tes') && submissions.length > 0 && (
                   <div className="flex items-center gap-1.5">
                     <span className="text-[9px] font-extrabold text-slate-400 uppercase">Kelas:</span>
                     <select
@@ -480,14 +480,14 @@ export default function KelolaPembelajaran({
                 )}
               </div>
 
-              {expandedMateri.jenis !== 'Literasi' ? (
+              {expandedMateri.jenis !== 'Literasi' && expandedMateri.jenis !== 'Tugas/Tes' ? (
                 <div className="py-12 px-6 text-center text-slate-500 space-y-3">
                   <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 mx-auto">
                     <HelpCircle size={24} />
                   </div>
                   <p className="text-xs font-bold">Laporan Ringkasan Dinonaktifkan</p>
                   <p className="text-[11px] text-slate-400 leading-relaxed max-w-sm mx-auto">
-                    Materi jenis ini tidak membutuhkan pengumpulan rangkuman siswa. Fitur rangkuman literasi hanya aktif pada materi berkategori <b>Literasi</b>.
+                    Materi jenis ini tidak membutuhkan pengumpulan laporan/rangkuman siswa. Laporan pengerjaan hanya aktif pada materi berkategori <b>Literasi</b> dan <b>Tugas/Tes</b>.
                   </p>
                 </div>
               ) : submissions.length === 0 ? (
@@ -495,9 +495,9 @@ export default function KelolaPembelajaran({
                   <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center mx-auto">
                     <AlertCircle size={22} />
                   </div>
-                  <p className="text-xs font-bold text-slate-600">Belum Ada Siswa Mengirimkan Literasi</p>
+                  <p className="text-xs font-bold text-slate-600">Belum Ada Siswa Mengirimkan Laporan</p>
                   <p className="text-[11px] text-slate-400 leading-normal max-w-sm mx-auto">
-                    Siswa Anda belum mengirimkan tugas rangkuman literasi di dashboard siswa mereka untuk materi ini.
+                    Siswa Anda belum mengirimkan {expandedMateri.jenis === 'Literasi' ? 'tugas rangkuman literasi' : 'laporan penyelesaian tugas/tes'} di dashboard siswa mereka untuk materi ini.
                   </p>
                 </div>
               ) : filteredSubmissions.length === 0 ? (
@@ -507,7 +507,7 @@ export default function KelolaPembelajaran({
                   </div>
                   <p className="text-xs font-bold text-slate-600">Belum Ada Siswa di Kelas {selectedKelasFilter}</p>
                   <p className="text-[11px] text-slate-400 leading-normal max-w-sm mx-auto">
-                    Belum ada siswa dari kelas {selectedKelasFilter} yang mengirimkan tugas rangkuman literasi untuk materi ini.
+                    Belum ada siswa dari kelas {selectedKelasFilter} yang mengirimkan {expandedMateri.jenis === 'Literasi' ? 'tugas rangkuman literasi' : 'laporan penyelesaian tugas/tes'} untuk materi ini.
                   </p>
                 </div>
               ) : (
@@ -518,7 +518,7 @@ export default function KelolaPembelajaran({
                         <th className="py-2.5">Siswa</th>
                         <th className="py-2.5">Kelas</th>
                         <th className="py-2.5 text-center">Tanggal Kirim</th>
-                        <th className="py-2.5 text-center">Kata</th>
+                        <th className="py-2.5 text-center">{expandedMateri.jenis === 'Literasi' ? 'Kata' : 'Laporan'}</th>
                         <th className="py-2.5 text-right">Aksi</th>
                       </tr>
                     </thead>
@@ -539,11 +539,17 @@ export default function KelolaPembelajaran({
                               {sub.tanggal}
                             </td>
                             <td className="py-3 text-center font-mono">
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                wordCount >= 200 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                              }`}>
-                                {wordCount} kata
-                              </span>
+                              {expandedMateri.jenis === 'Literasi' ? (
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                  wordCount >= 200 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                                }`}>
+                                  {wordCount} kata
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold leading-normal truncate max-w-[150px] inline-block">
+                                  {sub.isi}
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 text-right">
                               <button
@@ -595,7 +601,7 @@ export default function KelolaPembelajaran({
                         </span>
                       </div>
                       <h4 className="font-extrabold text-slate-800 text-sm mt-1">
-                        Rangkuman Literasi: {siswa?.nama} ({siswa?.kelas})
+                        {expandedMateri.jenis === 'Literasi' ? 'Rangkuman Literasi' : 'Laporan Hasil Tugas'}: {siswa?.nama} ({siswa?.kelas})
                       </h4>
                     </div>
                     <button
@@ -609,7 +615,7 @@ export default function KelolaPembelajaran({
                   <div className="flex-1 overflow-y-auto pr-2 space-y-4">
                     <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100/50 space-y-2">
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        Konten Literasi Yang Ditulis Oleh Siswa:
+                        {expandedMateri.jenis === 'Literasi' ? 'Konten Literasi Yang Ditulis Oleh Siswa:' : 'Informasi / Catatan Penyelesaian Yang Dilaporkan Siswa:'}
                       </div>
                       <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap font-sans">
                         {selectedRangkuman.isi}
@@ -619,7 +625,11 @@ export default function KelolaPembelajaran({
 
                   <div className="border-t border-slate-100 pt-4 mt-4 flex justify-between items-center text-[10px]">
                     <div className="text-slate-400">
-                      Total: <span className="font-bold text-slate-700">{wordCount} kata</span> (Minimal target 200 kata)
+                      {expandedMateri.jenis === 'Literasi' ? (
+                        <>Total: <span className="font-bold text-slate-700">{wordCount} kata</span> (Minimal target 150 kata)</>
+                      ) : (
+                        <span className="text-slate-500 font-semibold">Tipe Laporan: Konfirmasi Tugas/Kuis</span>
+                      )}
                     </div>
                     <button
                       onClick={() => setSelectedRangkuman(null)}

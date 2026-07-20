@@ -45,15 +45,31 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
   const [siswaError, setSiswaError] = useState('');
   const [isSiswaLoading, setIsSiswaLoading] = useState(false);
 
+  // Track if user has ever successfully logged in before (history)
+  const [hasEverLoggedIn, setHasEverLoggedIn] = useState<boolean>(() => {
+    const saved = localStorage.getItem('hasEverLoggedIn');
+    if (saved === 'true') return true;
+    
+    // Fallback checks for active sessions
+    const hasSiswa = localStorage.getItem('loggedSiswa') !== null;
+    const hasTeacher = localStorage.getItem('isTeacherLoggedIn') === 'true';
+    const hasSuperAdmin = localStorage.getItem('isSuperAdminLoggedIn') === 'true';
+    if (hasSiswa || hasTeacher || hasSuperAdmin) {
+      localStorage.setItem('hasEverLoggedIn', 'true');
+      return true;
+    }
+    return false;
+  });
+
   // Load teachers to populate school dropdown
   const teachersListForSchools = loadTeacherAccounts();
   const uniqueSchools = Array.from(new Set(teachersListForSchools.map(t => t.asalSekolah).filter(Boolean))) as string[];
   if (uniqueSchools.length === 0) {
-    uniqueSchools.push("SMAN 1 Magetan");
+    uniqueSchools.push("MGMP INFORMATIKA BONDOWOSO");
   }
 
   const [selectedSchool, setSelectedSchool] = useState(() => {
-    return uniqueSchools.includes("SMAN 1 Magetan") ? "SMAN 1 Magetan" : (uniqueSchools[0] || "SMAN 1 Magetan");
+    return uniqueSchools.includes("MGMP INFORMATIKA BONDOWOSO") ? "MGMP INFORMATIKA BONDOWOSO" : (uniqueSchools[0] || "MGMP INFORMATIKA BONDOWOSO");
   });
 
   const handleGuruSubmit = (e: React.FormEvent) => {
@@ -66,6 +82,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     setTimeout(() => {
       // 1. Check Super Admin Credentials
       if (cleanUsername === 'admin' && guruPassword === 'sableng212') {
+        localStorage.setItem('hasEverLoggedIn', 'true');
         onSuperAdminLoginSuccess();
         return;
       }
@@ -82,6 +99,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
           setIsGuruLoading(false);
           return;
         }
+        localStorage.setItem('hasEverLoggedIn', 'true');
         onTeacherLoginSuccess(matchedTeacher.username);
         return;
       }
@@ -91,6 +109,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       const allowedPassword = settings?.adminPassword || 'admin123';
 
       if (cleanUsername === allowedUsername && guruPassword === allowedPassword) {
+        localStorage.setItem('hasEverLoggedIn', 'true');
         onTeacherLoginSuccess(cleanUsername);
         return;
       }
@@ -238,6 +257,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       }
 
       if (found) {
+        localStorage.setItem('hasEverLoggedIn', 'true');
         onStudentLoginSuccess(found, matchedTeacherUsername);
       } else {
         setSiswaError('NIS/Username atau Kata Sandi Siswa salah pada sekolah yang dipilih.');
@@ -255,23 +275,25 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         className="w-full max-w-lg p-6 sm:p-10 rounded-3xl neu-flat border border-white/40 space-y-8"
       >
         {/* Logo and Brand */}
-        <div className="text-center space-y-3">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg mx-auto overflow-hidden">
-            {settings?.logoSekolah ? (
-              <img src={settings.logoSekolah} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-            ) : (
-              <GraduationCap size={32} />
-            )}
+        {hasEverLoggedIn && (
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg mx-auto overflow-hidden">
+              {settings?.logoSekolah ? (
+                <img src={settings.logoSekolah} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <GraduationCap size={32} />
+              )}
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-wider uppercase">
+                {settings?.kopSekolah || 'MGMP INFORMATIKA BONDOWOSO'}
+              </h2>
+              <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
+                Manajemen Pembelajaran {settings?.mataPelajaran || 'Informatika'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-wider uppercase">
-              {settings?.kopSekolah || 'SMASA-ONLINE'}
-            </h2>
-            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-              Manajemen Pembelajaran {settings?.mataPelajaran || 'Informatika'}
-            </p>
-          </div>
-        </div>
+        )}
 
         {/* Tab Selector (Neumorphic Style) */}
         <div className="p-1.5 rounded-2xl bg-slate-200/50 neu-inset flex relative overflow-hidden" id="login-role-selector">
@@ -662,7 +684,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
         <div className="text-center pt-2">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-            SMASA Magetan • Informatika Online
+            MGMP INFORMATIKA BONDOWOSO
           </p>
         </div>
       </motion.div>

@@ -98,6 +98,7 @@ interface SiswaDashboardProps {
   onLogout: () => void;
   onUpdatePembelajaran?: (p: Pembelajaran) => void;
   onSavePresensi?: (list: Presensi[]) => void;
+  onSaveRangkuman?: (list: Rangkuman[]) => void;
 }
 
 export default function SiswaDashboard({
@@ -111,6 +112,7 @@ export default function SiswaDashboard({
   onLogout,
   onUpdatePembelajaran,
   onSavePresensi,
+  onSaveRangkuman,
 }: SiswaDashboardProps) {
   // Navigation Tabs for Student Dashboard
   const [activeTab, setActiveTab] = useState<'dashboard' | 'pembelajaran' | 'qr-presensi' | 'settings'>('dashboard');
@@ -388,27 +390,29 @@ export default function SiswaDashboard({
     setFoto(siswa.foto || '');
   }, [siswa.id, siswa]);
 
-  // Handle saving summary
+  // Handle saving summary & tasks
   const handleSaveSummary = (pembelajaranId: string) => {
     const materi = pembelajaranList.find((p) => p.id === pembelajaranId);
     if (materi) {
       const status = getTenggatStatus(materi);
       if (status && status.diffDays < 0 && !materi.isUnlocked) {
-        alert('Tenggat waktu pengerjaan untuk materi ini telah terlewati. Anda tidak dapat lagi mengirimkan rangkuman.');
+        alert('Tenggat waktu pengerjaan untuk materi ini telah terlewati. Anda tidak dapat lagi mengirimkan laporan.');
         return;
       }
     }
 
     const text = summaryDrafts[pembelajaranId] || '';
     if (!text.trim()) {
-      alert('Rangkuman tidak boleh kosong.');
+      alert('Isian laporan pengerjaan tidak boleh kosong.');
       return;
     }
 
-    const words = text.trim().split(/\s+/).filter((w) => w.length > 0);
-    if (words.length < 150) {
-      alert(`Rangkuman harus minimal 150 kata. Saat ini baru ${words.length} kata.`);
-      return;
+    if (materi && materi.jenis === 'Literasi') {
+      const words = text.trim().split(/\s+/).filter((w) => w.length > 0);
+      if (words.length < 150) {
+        alert(`Rangkuman harus minimal 150 kata. Saat ini baru ${words.length} kata.`);
+        return;
+      }
     }
 
     const allRangkumans = loadRangkuman();
@@ -442,6 +446,9 @@ export default function SiswaDashboard({
 
     // Persist and update local states
     saveRangkuman(allRangkumans);
+    if (onSaveRangkuman) {
+      onSaveRangkuman(allRangkumans);
+    }
     const updatedStudentRangkumans = allRangkumans.filter((r) => r.siswaId === siswa.id);
     setRangkumans(updatedStudentRangkumans);
 
@@ -1080,6 +1087,81 @@ export default function SiswaDashboard({
                                 })()}
                               </div>
                             )}
+
+                            {/* CRITICAL FEATURE: "PADA CARD TUGAS/TES, TAMBAHKAN INPUT LAPORAN PENGERJAAN" */}
+                            {materi.jenis === 'Tugas/Tes' && (
+                              <div className="p-3.5 rounded-2xl bg-slate-50/70 border border-slate-100 space-y-3">
+                                <div className="flex justify-between items-center">
+                                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wide block">
+                                    Laporan Hasil Tugas / Tes
+                                  </label>
+                                  {hasSavedSummary && (
+                                    <span className="text-[9px] font-bold text-emerald-600 flex items-center gap-1">
+                                      <CheckCircle2 size={10} />
+                                      Sudah Dilaporkan
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Text input for note/score/link */}
+                                <input
+                                  type="text"
+                                  value={summaryDrafts[materi.id] || ''}
+                                  onChange={(e) => {
+                                    if (isOverdue || isTimeClosed) return;
+                                    const text = e.target.value;
+                                    setSummaryDrafts((prev) => ({ ...prev, [materi.id]: text }));
+                                  }}
+                                  disabled={isOverdue || isTimeClosed}
+                                  placeholder={
+                                    isOverdue
+                                      ? "Tenggat waktu pengerjaan telah terlewati. Akses pengisian dikunci."
+                                      : isTimeClosed
+                                      ? `Akses ditutup di luar jam operasional (${startStr} - ${endStr}).`
+                                      : "Contoh: 'Tuntas, Skor: 95', 'Sudah dikerjakan di Quizizz'..."
+                                  }
+                                  className={`w-full text-xs p-3 rounded-xl border border-slate-200 bg-white focus:outline-none text-slate-700 leading-relaxed font-sans placeholder:text-slate-400 ${
+                                    isOverdue || isTimeClosed ? 'bg-slate-100/80 text-slate-400 cursor-not-allowed' : 'focus:ring-2 focus:ring-pink-500/10'
+                                  }`}
+                                  id={`tugas-input-${materi.id}`}
+                                />
+
+                                {/* Saved info feedback */}
+                                {savedSummaryData && (
+                                  <p className="text-[9px] text-slate-400 font-medium italic">
+                                    Terakhir dilaporkan pada: {savedSummaryData.tanggal}
+                                  </p>
+                                )}
+
+                                {/* Save Button */}
+                                {(() => {
+                                  const currentText = summaryDrafts[materi.id] || '';
+                                  const isEnough = currentText.trim().length > 0;
+                                  return (
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                                      <div className="flex flex-col text-[10px]">
+                                        <span className="font-bold text-emerald-600">
+                                          {saveStatus[materi.id]}
+                                        </span>
+                                      </div>
+                                      {!isOverdue && !isTimeClosed && (
+                                        <button
+                                          onClick={() => handleSaveSummary(materi.id)}
+                                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md active:scale-95 ${
+                                            isEnough
+                                              ? 'bg-pink-600 text-white hover:bg-pink-700'
+                                              : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                                          }`}
+                                          id={`btn-save-tugas-${materi.id}`}
+                                        >
+                                          Kirim Laporan Tugas
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -1546,6 +1628,7 @@ export default function SiswaDashboard({
                             id="student-edit-password"
                           />
                         </div>
+                        <p className="text-[9px] text-slate-400 mt-1">Sandi bebas, tidak harus berupa NISN Anda.</p>
                       </div>
                     </div>
                   </div>

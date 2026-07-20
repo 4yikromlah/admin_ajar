@@ -21,7 +21,7 @@ import Login from './components/Login';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 
 // Import tipe data & penanganan penyimpanan lokal
-import { Siswa, Nilai, Presensi, Pembelajaran, Pengumuman, AppSettings } from './types';
+import { Siswa, Nilai, Presensi, Pembelajaran, Pengumuman, AppSettings, Rangkuman } from './types';
 import {
   loadSiswa,
   saveSiswa,
@@ -35,6 +35,8 @@ import {
   savePengumuman,
   loadSettings,
   saveSettings,
+  loadRangkuman,
+  saveRangkuman,
   pushToGoogleSheets,
   pullFromGoogleSheets,
 } from './data';
@@ -277,6 +279,14 @@ export default function App() {
   };
 
   // ============================================================================
+  // HANDLERS CRUD: RANGKUMAN (LITERASI & LAPORAN TUGAS)
+  // ============================================================================
+  const handleSaveRangkuman = (updatedRangkuman: Rangkuman[]) => {
+    saveRangkuman(updatedRangkuman);
+    syncPush();
+  };
+
+  // ============================================================================
   // HANDLERS CRUD: PEMBELAJARAN
   // ============================================================================
   const handleAddPembelajaran = (pembelajaran: Pembelajaran) => {
@@ -430,6 +440,7 @@ export default function App() {
           }}
           onUpdatePembelajaran={handleUpdatePembelajaran}
           onSavePresensi={handleSavePresensi}
+          onSaveRangkuman={handleSaveRangkuman}
         />
       </div>
     );
