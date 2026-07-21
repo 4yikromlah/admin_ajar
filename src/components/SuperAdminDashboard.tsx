@@ -82,6 +82,13 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setErrorMsg('');
     setSuccessMsg('Menyimpan konfigurasi...');
 
+    if (cleanUrl && (cleanUrl.includes('docs.google.com/spreadsheets') || !cleanUrl.includes('script.google.com'))) {
+      setErrorMsg('Peringatan: URL yang Anda masukkan adalah URL Google Spreadsheet langsung atau format salah. Anda harus memasukkan URL Web App Google Apps Script hasil penyebaran (Deployment URL) yang berakhiran /exec. Silakan baca "Panduan Setup Database Cloud" di bawah ini.');
+      setIsSyncing(false);
+      setTimeout(() => setErrorMsg(''), 15000);
+      return;
+    }
+
     try {
       // Save locally and server-side
       await saveSuperAdminSpreadsheetUrlToServer(cleanUrl, cleanPassword, cleanEmail);

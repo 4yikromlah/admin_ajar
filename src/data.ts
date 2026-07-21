@@ -165,6 +165,18 @@ export async function pushToGoogleSheets(): Promise<boolean> {
   }
 }
 
+function mergeArraysById<T extends { id: string }>(local: T[], remote: T[]): T[] {
+  const merged = [...remote];
+  const remoteIds = new Set(remote.map(item => item.id));
+  
+  local.forEach(localItem => {
+    if (!remoteIds.has(localItem.id)) {
+      merged.push(localItem);
+    }
+  });
+  return merged;
+}
+
 export async function pullFromGoogleSheets(): Promise<boolean> {
   const url = getGoogleAppsScriptUrl();
   if (!url) return false;
@@ -179,19 +191,24 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
     
     if (db) {
       if (Array.isArray(db.siswa)) {
-        saveSiswa(db.siswa);
+        const localSiswa = loadSiswa();
+        saveSiswa(mergeArraysById(localSiswa, db.siswa));
       }
       if (Array.isArray(db.nilai)) {
-        saveNilai(db.nilai);
+        const localNilai = loadNilai();
+        saveNilai(mergeArraysById(localNilai, db.nilai));
       }
       if (Array.isArray(db.presensi)) {
-        savePresensi(db.presensi);
+        const localPresensi = loadPresensi();
+        savePresensi(mergeArraysById(localPresensi, db.presensi));
       }
       if (Array.isArray(db.pembelajaran)) {
-        savePembelajaran(db.pembelajaran);
+        const localPembelajaran = loadPembelajaran();
+        savePembelajaran(mergeArraysById(localPembelajaran, db.pembelajaran));
       }
       if (Array.isArray(db.pengumuman)) {
-        savePengumuman(db.pengumuman);
+        const localPengumuman = loadPengumuman();
+        savePengumuman(mergeArraysById(localPengumuman, db.pengumuman));
       }
       if (db.settings) {
         const settingsObj = Array.isArray(db.settings) ? db.settings[0] : db.settings;
@@ -201,7 +218,8 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
         }
       }
       if (Array.isArray(db.rangkuman)) {
-        saveRangkuman(db.rangkuman);
+        const localRangkuman = loadRangkuman();
+        saveRangkuman(mergeArraysById(localRangkuman, db.rangkuman));
       }
       return true;
     }
@@ -582,7 +600,18 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
     const db = await response.json();
     
     if (db && Array.isArray(db.teachers)) {
-      saveTeacherAccounts(db.teachers);
+      const localTeachers = loadTeacherAccounts();
+      const mergedTeachers = [...db.teachers];
+      
+      // Keep any local teachers (e.g., registered locally but not pushed yet, or added offline)
+      localTeachers.forEach(localT => {
+        const exists = db.teachers.some((t: any) => t.username === localT.username || t.id === localT.id);
+        if (!exists) {
+          mergedTeachers.push(localT);
+        }
+      });
+      
+      saveTeacherAccounts(mergedTeachers);
       return true;
     }
     return false;
@@ -617,7 +646,14 @@ export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promis
     const db = await response.json();
     let currentTeachers = loadTeacherAccounts();
     if (db && Array.isArray(db.teachers)) {
-      currentTeachers = db.teachers;
+      const mergedTeachers = [...db.teachers];
+      currentTeachers.forEach(localT => {
+        const exists = db.teachers.some((t: any) => t.username === localT.username || t.id === localT.id);
+        if (!exists) {
+          mergedTeachers.push(localT);
+        }
+      });
+      currentTeachers = mergedTeachers;
     }
 
     // 3. Validasi username unik pada data terbaru dari spreadsheet

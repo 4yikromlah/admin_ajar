@@ -88,6 +88,12 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
       return;
     }
 
+    const cleanUrl = spreadsheetUrl.trim();
+    if (cleanUrl && (cleanUrl.includes('docs.google.com/spreadsheets') || !cleanUrl.includes('script.google.com'))) {
+      setErrorMsg('Peringatan: URL Spreadsheet yang dimasukkan adalah URL Google Spreadsheet langsung. Silakan masukkan URL Aplikasi Web Google Apps Script hasil penyebaran (/exec) agar koneksi berhasil.');
+      return;
+    }
+
     onUpdateSettings({
       namaGuru,
       nip,
