@@ -5,12 +5,15 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import 'dotenv/config';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirnameSafe = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (typeof import.meta !== 'undefined' && import.meta.url)
+    ? path.dirname(fileURLToPath(import.meta.url))
+    : process.cwd();
 
 const app = express();
 const PORT = 3000;
-const CONFIG_FILE = path.join(__dirname, 'spreadsheet_config.json');
+const CONFIG_FILE = path.join(__dirnameSafe, 'spreadsheet_config.json');
 
 app.use(express.json());
 
@@ -252,7 +255,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     console.log('[Server] Starting in PRODUCTION mode...');
-    const distPath = path.join(__dirname, 'dist');
+    const distPath = path.join(__dirnameSafe, 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
