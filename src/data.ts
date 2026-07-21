@@ -394,6 +394,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   spreadsheetUrl: "",
   adminUsername: "admin",
   adminPassword: "admin123",
+  adminEmail: "4ndr1saya@gmail.com",
   mataPelajaran: "Informatika"
 };
 
@@ -415,6 +416,7 @@ export const loadSettings = (): AppSettings => {
           initialSettings.namaGuru = me.nama;
           initialSettings.mataPelajaran = me.mataPelajaran;
           initialSettings.spreadsheetUrl = me.spreadsheetUrl || '';
+          initialSettings.adminEmail = me.email || '';
           if (me.asalSekolah) {
             initialSettings.kopSekolah = me.asalSekolah;
           }
@@ -456,7 +458,8 @@ export const saveSettings = (settings: AppSettings) => {
             password: settings.adminPassword,
             mataPelajaran: settings.mataPelajaran || "Informatika",
             asalSekolah: settings.kopSekolah || "SMA NEGERI 1 SALATIGA",
-            spreadsheetUrl: settings.spreadsheetUrl || ""
+            spreadsheetUrl: settings.spreadsheetUrl || "",
+            email: settings.adminEmail || ""
           };
         }
         return t;

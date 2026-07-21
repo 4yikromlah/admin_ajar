@@ -100,6 +100,7 @@ export interface AppSettings {
   spreadsheetUrl?: string;
   adminUsername?: string;
   adminPassword?: string;
+  adminEmail?: string;
   mataPelajaran?: string;
 }
 

@@ -385,7 +385,19 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         })
       });
 
-      const resData = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      let resData: any = {};
+
+      if (contentType.includes('application/json')) {
+        resData = await response.json();
+      } else {
+        const rawText = await response.text();
+        if (rawText.includes('cookie_check') || rawText.includes('302 Found') || rawText.includes('nginx') || rawText.includes('Cookie')) {
+          throw new Error('Terjadi pembatasan keamanan Cookie di Panel Preview AI Studio. Silakan klik tombol "Open in New Tab" di kanan atas layar preview untuk membuka aplikasi di tab baru, lalu coba lagi!');
+        } else {
+          throw new Error('Gagal menerima respon valid dari server. Silakan coba buka aplikasi di tab baru.');
+        }
+      }
 
       if (!response.ok) {
         throw new Error(resData.error || 'Gagal mengirimkan permintaan reset kata sandi.');
@@ -441,7 +453,20 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         })
       });
 
-      const resData = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      let resData: any = {};
+
+      if (contentType.includes('application/json')) {
+        resData = await response.json();
+      } else {
+        const rawText = await response.text();
+        if (rawText.includes('cookie_check') || rawText.includes('302 Found') || rawText.includes('nginx') || rawText.includes('Cookie')) {
+          throw new Error('Terjadi pembatasan keamanan Cookie di Panel Preview AI Studio. Silakan klik tombol "Open in New Tab" di kanan atas layar preview untuk membuka aplikasi di tab baru, lalu coba lagi!');
+        } else {
+          throw new Error('Gagal menerima respon valid dari server. Silakan coba buka aplikasi di tab baru.');
+        }
+      }
+
       if (!response.ok) {
         throw new Error(resData.error || 'Gagal mengatur ulang kata sandi.');
       }

@@ -37,6 +37,7 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
   const [spreadsheetUrl, setSpreadsheetUrl] = useState(settings.spreadsheetUrl || '');
   const [adminUsername, setAdminUsername] = useState(settings.adminUsername || 'admin');
   const [adminPassword, setAdminPassword] = useState(settings.adminPassword || 'admin123');
+  const [adminEmail, setAdminEmail] = useState(settings.adminEmail || '');
   const [mataPelajaran, setMataPelajaran] = useState(settings.mataPelajaran || 'Informatika');
 
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -116,6 +117,7 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
       spreadsheetUrl,
       adminUsername,
       adminPassword,
+      adminEmail,
       mataPelajaran,
     });
 
@@ -149,6 +151,7 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
     setSpreadsheetUrl(DEFAULT_SETTINGS.spreadsheetUrl || '');
     setAdminUsername(DEFAULT_SETTINGS.adminUsername || 'admin');
     setAdminPassword(DEFAULT_SETTINGS.adminPassword || 'admin123');
+    setAdminEmail(DEFAULT_SETTINGS.adminEmail || '');
     setMataPelajaran(DEFAULT_SETTINGS.mataPelajaran || 'Informatika');
     
     onUpdateSettings(DEFAULT_SETTINGS);
@@ -323,6 +326,22 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
                 />
                 <p className="text-[10px] text-slate-400 mt-1 leading-normal">
                   Gunakan kredensial ini untuk login ke Portal Guru selanjutnya. Kredensial bawaan adalah <strong>admin</strong> dan <strong>admin123</strong>.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Email Pemulihan Guru / Admin</label>
+                <input
+                  type="email"
+                  required
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-semibold"
+                  placeholder="Contoh: romlah@gmail.com"
+                  id="input-settings-admin-email"
+                />
+                <p className="text-[10px] text-slate-400 mt-1 leading-normal">
+                  Gunakan email aktif Anda agar mempermudah proses atur ulang kata sandi (lupa password) di halaman depan login.
                 </p>
               </div>
             </div>
