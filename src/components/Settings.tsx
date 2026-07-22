@@ -7,7 +7,7 @@ import React, { useState, useRef } from 'react';
 import { Settings, Save, RotateCcw, Upload, Image, Trash2, Check, AlertCircle, Database, Copy, Download, UploadCloud, HardDrive } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings } from '../types';
-import { DEFAULT_SETTINGS, downloadLocalDatabaseBackup, restoreLocalDatabaseFromJSON } from '../data';
+import { DEFAULT_SETTINGS, downloadLocalDatabaseBackup, restoreLocalDatabaseFromJSON, pullFromGoogleSheets, pushToGoogleSheets } from '../data';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -49,6 +49,54 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
   const fileInputProvRef = useRef<HTMLInputElement>(null);
   const restoreFileInputRef = useRef<HTMLInputElement>(null);
   const [restoreStatusMsg, setRestoreStatusMsg] = useState('');
+  const [isManualPulling, setIsManualPulling] = useState(false);
+  const [isManualPushing, setIsManualPushing] = useState(false);
+  const [manualSyncMsg, setManualSyncMsg] = useState('');
+
+  const handleManualPull = async () => {
+    if (!spreadsheetUrl.trim()) {
+      setErrorMsg('Masukkan URL Web App Google Apps Script terlebih dahulu!');
+      return;
+    }
+    setIsManualPulling(true);
+    setManualSyncMsg('');
+    setErrorMsg('');
+    try {
+      const ok = await pullFromGoogleSheets();
+      if (ok) {
+        setManualSyncMsg('Berhasil menarik data dari Spreadsheet! Data web sekarang 100% sama dengan Google Sheets.');
+        if (onReloadAllStates) onReloadAllStates();
+      } else {
+        setErrorMsg('Gagal menarik data dari Google Sheets. Pastikan URL Web App valid dan dapat diakses Siapa Saja.');
+      }
+    } catch (e: any) {
+      setErrorMsg('Error saat menarik data: ' + (e.message || 'Gagal koneksi'));
+    } finally {
+      setIsManualPulling(false);
+    }
+  };
+
+  const handleManualPush = async () => {
+    if (!spreadsheetUrl.trim()) {
+      setErrorMsg('Masukkan URL Web App Google Apps Script terlebih dahulu!');
+      return;
+    }
+    setIsManualPushing(true);
+    setManualSyncMsg('');
+    setErrorMsg('');
+    try {
+      const ok = await pushToGoogleSheets();
+      if (ok) {
+        setManualSyncMsg('Berhasil mengunggah seluruh data web ke Google Sheets!');
+      } else {
+        setErrorMsg('Gagal mengunggah data ke Google Sheets.');
+      }
+    } catch (e: any) {
+      setErrorMsg('Error saat mengunggah data: ' + (e.message || 'Gagal koneksi'));
+    } finally {
+      setIsManualPushing(false);
+    }
+  };
 
   const handleDownloadBackup = () => {
     downloadLocalDatabaseBackup();
@@ -717,6 +765,35 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
                 <p className="text-[10px] text-slate-400 mt-1 leading-normal">
                   Masukkan URL Web App dari Apps Script Anda setelah dideploy. Biarkan kosong jika ingin menggunakan mode penyimpanan lokal offline-first.
                 </p>
+
+                <div className="flex flex-wrap items-center gap-2.5 mt-3">
+                  <button
+                    type="button"
+                    onClick={handleManualPull}
+                    disabled={isManualPulling || isManualPushing}
+                    className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    <Download size={14} className={isManualPulling ? "animate-spin" : ""} />
+                    {isManualPulling ? "Menarik Data dari Spreadsheet..." : "Tarik Data dari Spreadsheet (Timpa Web)"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleManualPush}
+                    disabled={isManualPulling || isManualPushing}
+                    className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    <UploadCloud size={14} className={isManualPushing ? "animate-spin" : ""} />
+                    {isManualPushing ? "Mengunggah Data ke Spreadsheet..." : "Unggah Data Web ke Spreadsheet (Timpa Spreadsheet)"}
+                  </button>
+                </div>
+
+                {manualSyncMsg && (
+                  <div className="mt-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                    <Check size={16} className="text-emerald-600 shrink-0" />
+                    <span>{manualSyncMsg}</span>
+                  </div>
+                )}
               </div>
 
               {/* Panduan Instalasi */}

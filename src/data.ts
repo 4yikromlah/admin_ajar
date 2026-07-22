@@ -128,14 +128,29 @@ export async function pushToGoogleSheets(): Promise<boolean> {
   const url = getGoogleAppsScriptUrl();
   if (!url) return false;
 
-  const db: FullDatabase = {
-    siswa: loadSiswa(),
-    nilai: loadNilai(),
-    presensi: loadPresensi(),
-    pembelajaran: loadPembelajaran(),
-    pengumuman: loadPengumuman(),
-    settings: loadSettings(),
-    rangkuman: loadRangkuman(),
+  const siswa = loadSiswa();
+  const nilai = loadNilai();
+  const presensi = loadPresensi();
+  const pembelajaran = loadPembelajaran();
+  const pengumuman = loadPengumuman();
+  const settings = loadSettings();
+  const rangkuman = loadRangkuman();
+
+  const db = {
+    siswa,
+    Siswa: siswa,
+    nilai,
+    Nilai: nilai,
+    presensi,
+    Presensi: presensi,
+    pembelajaran,
+    Pembelajaran: pembelajaran,
+    pengumuman,
+    Pengumuman: pengumuman,
+    settings,
+    Settings: settings,
+    rangkuman,
+    Rangkuman: rangkuman,
   };
 
   // 1. Try server proxy first to avoid CORS / iframe redirect issues on mobile/different gadgets
@@ -181,16 +196,17 @@ export async function pushToGoogleSheets(): Promise<boolean> {
   }
 }
 
-function mergeArraysById<T extends { id: string }>(local: T[], remote: T[]): T[] {
-  const merged = [...remote];
-  const remoteIds = new Set(remote.map(item => item.id));
-  
-  local.forEach(localItem => {
-    if (!remoteIds.has(localItem.id)) {
-      merged.push(localItem);
+function getCaseInsensitiveProp(obj: any, targetKeys: string[]): any {
+  if (!obj || typeof obj !== 'object') return undefined;
+  for (const key of Object.keys(obj)) {
+    const lowerKey = key.toLowerCase();
+    for (const target of targetKeys) {
+      if (lowerKey === target.toLowerCase()) {
+        return obj[key];
+      }
     }
-  });
-  return merged;
+  }
+  return undefined;
 }
 
 export async function pullFromGoogleSheets(): Promise<boolean> {
@@ -228,37 +244,41 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
     }
   }
 
-  if (db) {
-    if (Array.isArray(db.siswa)) {
-      const localSiswa = loadSiswa();
-      saveSiswa(mergeArraysById(localSiswa, db.siswa));
+  if (db && typeof db === 'object') {
+    const remoteSiswa = getCaseInsensitiveProp(db, ['siswa', 'siswaList', 'Siswa']);
+    const remoteNilai = getCaseInsensitiveProp(db, ['nilai', 'nilaiList', 'Nilai']);
+    const remotePresensi = getCaseInsensitiveProp(db, ['presensi', 'presensiList', 'Presensi']);
+    const remotePembelajaran = getCaseInsensitiveProp(db, ['pembelajaran', 'pembelajaranList', 'Pembelajaran']);
+    const remotePengumuman = getCaseInsensitiveProp(db, ['pengumuman', 'pengumumanList', 'Pengumuman']);
+    const remoteSettings = getCaseInsensitiveProp(db, ['settings', 'Settings']);
+    const remoteRangkuman = getCaseInsensitiveProp(db, ['rangkuman', 'rangkumanList', 'Rangkuman']);
+
+    // Directly update local storage with Google Sheets data to ensure 100% exact parity
+    if (Array.isArray(remoteSiswa)) {
+      saveSiswa(remoteSiswa);
     }
-    if (Array.isArray(db.nilai)) {
-      const localNilai = loadNilai();
-      saveNilai(mergeArraysById(localNilai, db.nilai));
+    if (Array.isArray(remoteNilai)) {
+      saveNilai(remoteNilai);
     }
-    if (Array.isArray(db.presensi)) {
-      const localPresensi = loadPresensi();
-      savePresensi(mergeArraysById(localPresensi, db.presensi));
+    if (Array.isArray(remotePresensi)) {
+      savePresensi(remotePresensi);
     }
-    if (Array.isArray(db.pembelajaran)) {
-      const localPembelajaran = loadPembelajaran();
-      savePembelajaran(mergeArraysById(localPembelajaran, db.pembelajaran));
+    if (Array.isArray(remotePembelajaran)) {
+      savePembelajaran(remotePembelajaran);
     }
-    if (Array.isArray(db.pengumuman)) {
-      const localPengumuman = loadPengumuman();
-      savePengumuman(mergeArraysById(localPengumuman, db.pengumuman));
+    if (Array.isArray(remotePengumuman)) {
+      savePengumuman(remotePengumuman);
     }
-    if (db.settings) {
-      const settingsObj = Array.isArray(db.settings) ? db.settings[0] : db.settings;
-      if (settingsObj && settingsObj.namaGuru) {
+    if (Array.isArray(remoteRangkuman)) {
+      saveRangkuman(remoteRangkuman);
+    }
+    if (remoteSettings) {
+      const settingsObj = Array.isArray(remoteSettings) ? remoteSettings[0] : remoteSettings;
+      if (settingsObj && typeof settingsObj === 'object') {
         if (settingsObj.kkm) settingsObj.kkm = Number(settingsObj.kkm);
-        saveSettings({ ...DEFAULT_SETTINGS, ...settingsObj, spreadsheetUrl: url });
+        const currentSettings = loadSettings();
+        saveSettings({ ...DEFAULT_SETTINGS, ...currentSettings, ...settingsObj, spreadsheetUrl: url });
       }
-    }
-    if (Array.isArray(db.rangkuman)) {
-      const localRangkuman = loadRangkuman();
-      saveRangkuman(mergeArraysById(localRangkuman, db.rangkuman));
     }
     return true;
   }
