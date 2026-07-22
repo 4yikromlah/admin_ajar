@@ -4,17 +4,18 @@
  */
 
 import React, { useState, useRef } from 'react';
-import { Settings, Save, RotateCcw, Upload, Image, Trash2, Check, AlertCircle, Database, Copy } from 'lucide-react';
+import { Settings, Save, RotateCcw, Upload, Image, Trash2, Check, AlertCircle, Database, Copy, Download, UploadCloud, HardDrive } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings } from '../types';
-import { DEFAULT_SETTINGS } from '../data';
+import { DEFAULT_SETTINGS, downloadLocalDatabaseBackup, restoreLocalDatabaseFromJSON } from '../data';
 
 interface SettingsProps {
   settings: AppSettings;
   onUpdateSettings: (s: AppSettings) => void;
+  onReloadAllStates?: () => void;
 }
 
-export default function SettingsComponent({ settings, onUpdateSettings }: SettingsProps) {
+export default function SettingsComponent({ settings, onUpdateSettings, onReloadAllStates }: SettingsProps) {
   // Local state for settings form
   const [namaGuru, setNamaGuru] = useState(settings.namaGuru);
   const [nip, setNip] = useState(settings.nip);
@@ -46,6 +47,38 @@ export default function SettingsComponent({ settings, onUpdateSettings }: Settin
 
   const fileInputSekolahRef = useRef<HTMLInputElement>(null);
   const fileInputProvRef = useRef<HTMLInputElement>(null);
+  const restoreFileInputRef = useRef<HTMLInputElement>(null);
+  const [restoreStatusMsg, setRestoreStatusMsg] = useState('');
+
+  const handleDownloadBackup = () => {
+    downloadLocalDatabaseBackup();
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
+  };
+
+  const handleRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        if (content) {
+          const success = restoreLocalDatabaseFromJSON(content);
+          if (success) {
+            setRestoreStatusMsg('Database berhasil dipulihkan dari file backup JSON!');
+            if (onReloadAllStates) {
+              onReloadAllStates();
+            } else {
+              window.location.reload();
+            }
+          } else {
+            setErrorMsg('Format file backup JSON tidak valid!');
+          }
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
 
   // File to base64 converter
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'sekolah' | 'prov') => {
@@ -886,6 +919,60 @@ function doPost(e) {
                   </pre>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Cadangan & Pemulihan Database Lokal (JSON) */}
+          <div className="p-5 rounded-3xl bg-neu-bg neu-flat space-y-4">
+            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-200 pb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <HardDrive className="text-blue-600 w-5 h-5" />
+                <span>Cadangan & Pemulihan Database Lokal (JSON)</span>
+              </div>
+              <span className="text-[10px] bg-blue-100 text-blue-700 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                Pengaman Offline
+              </span>
+            </h3>
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Unduh salinan cadangan (backup) seluruh data lokal Anda (Siswa, Nilai, Presensi, Pembelajaran, Pengumuman, dan Pengaturan) dalam format file <strong>.json</strong>. Fitur ini berfungsi sebagai pengaman data jika koneksi Google Sheets terputus atau tidak terkoneksi.
+            </p>
+
+            {restoreStatusMsg && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold flex items-center gap-2">
+                <Check size={14} className="text-emerald-600 shrink-0" />
+                <span>{restoreStatusMsg}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleDownloadBackup}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center gap-2 hover:from-blue-700 hover:to-indigo-700 shadow-md shadow-blue-500/10 cursor-pointer active:scale-95 transition-all"
+                id="btn-download-json-backup"
+              >
+                <Download size={16} />
+                <span>Unduh Cadangan Database (.json)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => restoreFileInputRef.current?.click()}
+                className="p-3.5 rounded-2xl bg-white border border-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 hover:bg-slate-50 shadow-sm cursor-pointer active:scale-95 transition-all"
+                id="btn-restore-json-backup"
+              >
+                <UploadCloud size={16} className="text-slate-500" />
+                <span>Pulihkan dari File (.json)</span>
+              </button>
+
+              <input
+                type="file"
+                ref={restoreFileInputRef}
+                onChange={handleRestoreFile}
+                accept=".json,application/json"
+                className="hidden"
+              />
             </div>
           </div>
 

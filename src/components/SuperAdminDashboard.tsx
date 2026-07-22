@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, BookOpen, Plus, Trash2, Edit2, LogOut, Key, ShieldAlert, Database, UserPlus, CheckCircle2, AlertCircle, School, HelpCircle, ArrowDown, ArrowUp } from 'lucide-react';
+import { Users, BookOpen, Plus, Trash2, Edit2, LogOut, Key, ShieldAlert, Database, UserPlus, CheckCircle2, AlertCircle, School, HelpCircle, ArrowDown, ArrowUp, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TeacherAccount } from '../types';
 import { 
@@ -31,7 +31,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [mataPelajaran, setMataPelajaran] = useState('Informatika');
-  const [asalSekolah, setAsalSekolah] = useState('SMA Negeri 1 Salatiga');
+  const [asalSekolah, setAsalSekolah] = useState('MGMP INFORMATIKA SMA BONDOWOSO');
   const [email, setEmail] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -700,6 +700,10 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                           <div className="font-mono text-[10px] text-slate-400 mt-0.5">
                             Password: <span className="font-semibold">{t.password || '••••••'}</span>
                           </div>
+                          <div className="text-[10px] text-slate-500 font-medium mt-1 flex items-center gap-1">
+                            <Mail size={11} className="text-slate-400 shrink-0" />
+                            <span className="truncate max-w-[180px]" title={t.email}>{t.email || <span className="text-rose-400 italic">Belum diset</span>}</span>
+                          </div>
                         </td>
                         <td className="py-4 px-5 text-center">
                           {spreadsheetStatus === 'Connected' ? (
@@ -905,19 +909,35 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       .setMimeType(ContentService.MimeType.JSON);
   }
   var data = sheet.getDataRange().getValues();
-  var headers = data[0];
+  if (data.length < 2) {
+    return ContentService.createTextOutput(JSON.stringify({teachers: []}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  var rawHeaders = data[0];
+  var headers = [];
+  for (var k = 0; k < rawHeaders.length; k++) {
+    headers.push(String(rawHeaders[k]).trim().toLowerCase());
+  }
   var jsonArray = [];
   for (var i = 1; i < data.length; i++) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
       obj[headers[j]] = data[i][j];
     }
-    if (obj.isApproved === "TRUE" || obj.isApproved === true || obj.isApproved === "true") {
-      obj.isApproved = true;
-    } else {
-      obj.isApproved = false;
-    }
-    jsonArray.push(obj);
+    var app = String(obj.isapproved || obj.isApproved || "true").toLowerCase();
+    var isApp = (app === "true" || app === "1" || app === "yes");
+
+    jsonArray.push({
+      id: String(obj.id || ("T" + i)),
+      nama: String(obj.nama || ""),
+      username: String(obj.username || ""),
+      password: String(obj.password || ""),
+      mataPelajaran: String(obj.matapelajaran || obj.mataPelajaran || "Informatika"),
+      isApproved: isApp,
+      asalSekolah: String(obj.asalsekolah || obj.asalSekolah || ""),
+      spreadsheetUrl: String(obj.spreadsheeturl || obj.spreadsheetUrl || ""),
+      email: String(obj.email || "")
+    });
   }
   return ContentService.createTextOutput(JSON.stringify({teachers: jsonArray}))
     .setMimeType(ContentService.MimeType.JSON);
@@ -936,15 +956,15 @@ function doPost(e) {
     for (var i = 0; i < params.teachers.length; i++) {
       var t = params.teachers[i];
       sheet.appendRow([
-        t.id || "",
-        t.nama || "",
-        t.username || "",
-        t.password || "",
-        t.mataPelajaran || "",
+        String(t.id || ""),
+        String(t.nama || ""),
+        String(t.username || ""),
+        String(t.password || ""),
+        String(t.mataPelajaran || ""),
         t.isApproved !== undefined ? t.isApproved : true,
-        t.asalSekolah || "",
-        t.spreadsheetUrl || "",
-        t.email || ""
+        String(t.asalSekolah || ""),
+        String(t.spreadsheetUrl || ""),
+        String(t.email || "")
       ]);
     }
   }
@@ -962,19 +982,35 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   var data = sheet.getDataRange().getValues();
-  var headers = data[0];
+  if (data.length < 2) {
+    return ContentService.createTextOutput(JSON.stringify({teachers: []}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  var rawHeaders = data[0];
+  var headers = [];
+  for (var k = 0; k < rawHeaders.length; k++) {
+    headers.push(String(rawHeaders[k]).trim().toLowerCase());
+  }
   var jsonArray = [];
   for (var i = 1; i < data.length; i++) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
       obj[headers[j]] = data[i][j];
     }
-    if (obj.isApproved === "TRUE" || obj.isApproved === true || obj.isApproved === "true") {
-      obj.isApproved = true;
-    } else {
-      obj.isApproved = false;
-    }
-    jsonArray.push(obj);
+    var app = String(obj.isapproved || obj.isApproved || "true").toLowerCase();
+    var isApp = (app === "true" || app === "1" || app === "yes");
+
+    jsonArray.push({
+      id: String(obj.id || ("T" + i)),
+      nama: String(obj.nama || ""),
+      username: String(obj.username || ""),
+      password: String(obj.password || ""),
+      mataPelajaran: String(obj.matapelajaran || obj.mataPelajaran || "Informatika"),
+      isApproved: isApp,
+      asalSekolah: String(obj.asalsekolah || obj.asalSekolah || ""),
+      spreadsheetUrl: String(obj.spreadsheeturl || obj.spreadsheetUrl || ""),
+      email: String(obj.email || "")
+    });
   }
   return ContentService.createTextOutput(JSON.stringify({teachers: jsonArray}))
     .setMimeType(ContentService.MimeType.JSON);
@@ -993,15 +1029,15 @@ function doPost(e) {
     for (var i = 0; i < params.teachers.length; i++) {
       var t = params.teachers[i];
       sheet.appendRow([
-        t.id || "",
-        t.nama || "",
-        t.username || "",
-        t.password || "",
-        t.mataPelajaran || "",
+        String(t.id || ""),
+        String(t.nama || ""),
+        String(t.username || ""),
+        String(t.password || ""),
+        String(t.mataPelajaran || ""),
         t.isApproved !== undefined ? t.isApproved : true,
-        t.asalSekolah || "",
-        t.spreadsheetUrl || "",
-        t.email || ""
+        String(t.asalSekolah || ""),
+        String(t.spreadsheetUrl || ""),
+        String(t.email || "")
       ]);
     }
   }

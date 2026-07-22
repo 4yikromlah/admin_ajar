@@ -13,7 +13,8 @@ const __dirnameSafe = typeof __dirname !== 'undefined'
 
 const app = express();
 const PORT = 3000;
-const CONFIG_FILE = path.join(__dirnameSafe, 'spreadsheet_config.json');
+const PRIMARY_CONFIG_FILE = path.join(process.cwd(), 'spreadsheet_config.json');
+const FALLBACK_CONFIG_FILE = path.join(__dirnameSafe, 'spreadsheet_config.json');
 
 app.use(express.json());
 
@@ -23,13 +24,21 @@ let adminPassword = 'sableng212';
 let adminEmail = '4ndr1saya@gmail.com';
 
 try {
-  if (fs.existsSync(CONFIG_FILE)) {
-    const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
+  let targetFile = PRIMARY_CONFIG_FILE;
+  if (!fs.existsSync(PRIMARY_CONFIG_FILE) && fs.existsSync(FALLBACK_CONFIG_FILE)) {
+    targetFile = FALLBACK_CONFIG_FILE;
+  }
+  if (fs.existsSync(targetFile)) {
+    const raw = fs.readFileSync(targetFile, 'utf-8');
     const parsed = JSON.parse(raw);
     spreadsheetUrl = parsed.url || '';
     if (parsed.adminPassword) adminPassword = parsed.adminPassword;
     if (parsed.adminEmail) adminEmail = parsed.adminEmail;
-    console.log('[Server] Loaded config successfully. URL:', spreadsheetUrl, 'Email:', adminEmail);
+    console.log('[Server] Loaded config successfully from', targetFile, '. URL:', spreadsheetUrl, 'Email:', adminEmail);
+    // Write back to primary config file if it wasn't there
+    if (targetFile !== PRIMARY_CONFIG_FILE) {
+      fs.writeFileSync(PRIMARY_CONFIG_FILE, raw, 'utf-8');
+    }
   }
 } catch (e) {
   console.error('[Server] Failed to read CONFIG_FILE:', e);
@@ -60,7 +69,7 @@ app.post('/api/superadmin-url', (req, res) => {
   }
 
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify({ 
+    fs.writeFileSync(PRIMARY_CONFIG_FILE, JSON.stringify({ 
       url: spreadsheetUrl, 
       adminPassword, 
       adminEmail 
@@ -220,7 +229,7 @@ app.post('/api/reset-password', (req, res) => {
   if (cleanUsername === 'admin') {
     adminPassword = password.trim();
     try {
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ 
+      fs.writeFileSync(PRIMARY_CONFIG_FILE, JSON.stringify({ 
         url: spreadsheetUrl, 
         adminPassword, 
         adminEmail 
@@ -228,7 +237,7 @@ app.post('/api/reset-password', (req, res) => {
       console.log('[Server] Super Admin password reset successfully.');
       return res.json({ status: 'success', message: 'Password Super Admin berhasil diperbarui!' });
     } catch (e) {
-      console.error('[Server] Failed to write CONFIG_FILE on reset:', e);
+      console.error('[Server] Failed to write PRIMARY_CONFIG_FILE on reset:', e);
       return res.status(500).json({ error: 'Gagal memperbarui password di server' });
     }
   }

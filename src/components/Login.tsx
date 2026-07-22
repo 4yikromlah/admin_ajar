@@ -137,11 +137,11 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
   const uniqueSchools = Array.from(new Set(teachersList.map(t => t.asalSekolah).filter(Boolean))) as string[];
   if (uniqueSchools.length === 0) {
-    uniqueSchools.push("MGMP INFORMATIKA BONDOWOSO");
+    uniqueSchools.push("MGMP INFORMATIKA SMA BONDOWOSO");
   }
 
   const [selectedSchool, setSelectedSchool] = useState(() => {
-    return uniqueSchools.includes("MGMP INFORMATIKA BONDOWOSO") ? "MGMP INFORMATIKA BONDOWOSO" : (uniqueSchools[0] || "MGMP INFORMATIKA BONDOWOSO");
+    return uniqueSchools.includes("MGMP INFORMATIKA SMA BONDOWOSO") ? "MGMP INFORMATIKA SMA BONDOWOSO" : (uniqueSchools[0] || "MGMP INFORMATIKA SMA BONDOWOSO");
   });
 
   const handleGuruSubmit = (e: React.FormEvent) => {
@@ -1387,7 +1387,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
         <div className="text-center pt-2">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-            MGMP INFORMATIKA BONDOWOSO
+            MGMP INFORMATIKA SMA BONDOWOSO
           </p>
         </div>
       </motion.div>

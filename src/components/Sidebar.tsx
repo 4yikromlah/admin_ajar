@@ -6,6 +6,7 @@
 import { LayoutDashboard, Users, Award, CalendarCheck, BookOpen, BarChart3, Menu, X, GraduationCap, Settings, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings } from '../types';
+import SyncStatusIndicator from './SyncStatusIndicator';
 
 interface SidebarProps {
   currentMenu: string;
@@ -14,9 +15,26 @@ interface SidebarProps {
   setMobileOpen: (open: boolean) => void;
   onLogout: () => void;
   settings: AppSettings;
+  isOnline?: boolean;
+  isSyncing?: boolean;
+  syncError?: string | null;
+  lastSyncTime?: Date | null;
+  onManualSync?: () => void;
 }
 
-export default function Sidebar({ currentMenu, setCurrentMenu, mobileOpen, setMobileOpen, onLogout, settings }: SidebarProps) {
+export default function Sidebar({
+  currentMenu,
+  setCurrentMenu,
+  mobileOpen,
+  setMobileOpen,
+  onLogout,
+  settings,
+  isOnline = true,
+  isSyncing = false,
+  syncError = null,
+  lastSyncTime = null,
+  onManualSync,
+}: SidebarProps) {
   const menuItems = [
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
     { id: 'siswa', name: 'Kelola Siswa', icon: Users },
@@ -30,27 +48,39 @@ export default function Sidebar({ currentMenu, setCurrentMenu, mobileOpen, setMo
   return (
     <>
       {/* HEADER MOBILE (Glassmorphic Top Bar) */}
-      <header className="md:hidden fixed top-0 left-0 right-0 h-16 glass z-40 px-4 flex items-center justify-between border-b border-white/20 shadow-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-500 to-blue-600 flex items-center justify-center shadow-md overflow-hidden shrink-0">
+      <header className="md:hidden fixed top-0 left-0 right-0 h-16 glass z-40 px-3 flex items-center justify-between border-b border-white/20 shadow-sm gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-500 to-blue-600 flex items-center justify-center shadow-md overflow-hidden shrink-0">
             {settings.logoSekolah ? (
               <img src={settings.logoSekolah} alt="Logo Sekolah" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
-              <GraduationCap className="text-white w-5 h-5" />
+              <GraduationCap className="text-white w-4 h-4" />
             )}
           </div>
-          <div>
-            <h1 className="text-sm font-bold text-slate-800 tracking-tight leading-none">{settings.kopSekolah || 'SMASA Online'}</h1>
-            <span className="text-[10px] text-slate-500 font-medium">Mata Pelajaran {settings.mataPelajaran || 'Informatika'}</span>
+          <div className="min-w-0">
+            <h1 className="text-xs font-bold text-slate-800 tracking-tight leading-none truncate">{settings.kopSekolah || 'SMASA Online'}</h1>
+            <span className="text-[9px] text-slate-500 font-medium truncate block">{settings.mataPelajaran || 'Informatika'}</span>
           </div>
         </div>
-        <button
-          onClick={() => setMobileOpen(!mobileOpen)}
-          className="w-10 h-10 rounded-xl neu-flat-sm flex items-center justify-center text-slate-600 focus:outline-none"
-          id="mobile-menu-toggle"
-        >
-          {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <SyncStatusIndicator
+            isOnline={isOnline}
+            spreadsheetUrl={settings.spreadsheetUrl}
+            isSyncing={isSyncing}
+            syncError={syncError}
+            lastSyncTime={lastSyncTime}
+            onManualSync={onManualSync}
+            compact
+          />
+          <button
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="w-9 h-9 rounded-xl neu-flat-sm flex items-center justify-center text-slate-600 focus:outline-none"
+            id="mobile-menu-toggle"
+          >
+            {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
+        </div>
       </header>
 
       {/* MOBILE DRAWER OVERLAY */}

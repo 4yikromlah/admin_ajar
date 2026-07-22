@@ -295,8 +295,8 @@ export function saveLocalStorageData<T>(key: string, data: T[]) {
 import { TeacherAccount } from './types';
 
 export const SEED_TEACHERS: TeacherAccount[] = [
-  { id: 'T01', nama: 'Romlah, S.Kom., M.Cs.', username: 'romlah', password: 'password', mataPelajaran: 'Informatika', isApproved: true, asalSekolah: 'SMAN 1 Magetan' },
-  { id: 'T02', nama: 'Bambang Subianto, S.Pd.', username: 'bambang', password: 'password', mataPelajaran: 'Matematika', isApproved: true, asalSekolah: 'SMAN 1 Magetan' },
+  { id: 'T01', nama: 'Romlah, S.Kom., M.Cs.', username: 'romlah', password: 'password', mataPelajaran: 'Informatika', isApproved: true, asalSekolah: 'MGMP INFORMATIKA SMA BONDOWOSO' },
+  { id: 'T02', nama: 'Bambang Subianto, S.Pd.', username: 'bambang', password: 'password', mataPelajaran: 'Matematika', isApproved: true, asalSekolah: 'MGMP INFORMATIKA SMA BONDOWOSO' },
 ];
 
 export const loadTeacherAccounts = (): TeacherAccount[] => {
@@ -378,14 +378,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   namaKS: "Dr. Joko Wahyono, M.Pd.",
   jabatanKS: "Pembina Tk. I, IV/b",
   nipKS: "19740512 200003 1 002",
-  kopPemprov: "PEMERINTAH PROVINSI JAWA TENGAH",
-  kopDinas: "DINAS PENDIDIKAN DAN KEBUDAYAAN",
-  kopSekolah: "SMA NEGERI 1 SALATIGA",
-  kopAlamat: "Akr. A - Jl. Kemiri No. 1 Salatiga, Kode Pos 50711, Telp: (0298) 321321",
+  kopPemprov: "PEMERINTAH PROVINSI JAWA TIMUR",
+  kopDinas: "CABANG DINAS PENDIDIKAN WILAYAH BONDOWOSO",
+  kopSekolah: "MGMP INFORMATIKA SMA BONDOWOSO",
+  kopAlamat: "Jl. Piere Tendean No. 1 Bondowoso, Jawa Timur",
   logoSekolah: "",
   logoProv: "",
   kkm: 75,
-  kota: "Salatiga",
+  kota: "Bondowoso",
   tahunPelajaran: "2025/2026",
   literasiStartAccess: "00:00",
   literasiEndAccess: "23:59",
@@ -501,6 +501,66 @@ export const saveRangkuman = (data: Rangkuman[]) => {
 };
 
 // ----------------------------------------------------------------------------
+// BACKUP & RESTORE DATABASE LOKAL (JSON)
+// ----------------------------------------------------------------------------
+export function exportLocalDatabaseJSON(): string {
+  const username = getActiveTeacherUsername();
+  const dbData = {
+    app: 'SMASA-Online',
+    version: '1.0',
+    exportDate: new Date().toISOString(),
+    teacherUsername: username || 'default',
+    settings: loadSettings(),
+    siswa: loadSiswa(),
+    nilai: loadNilai(),
+    presensi: loadPresensi(),
+    pembelajaran: loadPembelajaran(),
+    pengumuman: loadPengumuman(),
+    rangkuman: loadRangkuman()
+  };
+  return JSON.stringify(dbData, null, 2);
+}
+
+export function downloadLocalDatabaseBackup() {
+  const jsonStr = exportLocalDatabaseJSON();
+  const settings = loadSettings();
+  const rawName = settings.namaGuru || 'Guru';
+  const teacherName = rawName.replace(/[^a-zA-Z0-9]/g, '_');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `Backup_Database_SMASA_${teacherName}_${dateStr}.json`;
+
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function restoreLocalDatabaseFromJSON(jsonString: string): boolean {
+  try {
+    const data = JSON.parse(jsonString);
+    if (!data || typeof data !== 'object') return false;
+
+    if (data.settings) saveSettings(data.settings);
+    if (Array.isArray(data.siswa)) saveSiswa(data.siswa);
+    if (Array.isArray(data.nilai)) saveNilai(data.nilai);
+    if (Array.isArray(data.presensi)) savePresensi(data.presensi);
+    if (Array.isArray(data.pembelajaran)) savePembelajaran(data.pembelajaran);
+    if (Array.isArray(data.pengumuman)) savePengumuman(data.pengumuman);
+    if (Array.isArray(data.rangkuman)) saveRangkuman(data.rangkuman);
+
+    return true;
+  } catch (e) {
+    console.error("Gagal memulihkan database dari JSON:", e);
+    return false;
+  }
+}
+
+// ----------------------------------------------------------------------------
 // SUPER ADMIN SPREADSHEET INTEGRATION FUNCTIONS
 // ----------------------------------------------------------------------------
 export function getSuperAdminSpreadsheetUrl(): string {
@@ -604,7 +664,15 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
     
     if (db && Array.isArray(db.teachers)) {
       const localTeachers = loadTeacherAccounts();
-      const mergedTeachers = [...db.teachers];
+      const mergedTeachers = db.teachers.map((remoteT: any) => {
+        const localMatch = localTeachers.find(l => l.username === remoteT.username || l.id === remoteT.id);
+        return {
+          ...remoteT,
+          email: remoteT.email || localMatch?.email || '',
+          asalSekolah: remoteT.asalSekolah || localMatch?.asalSekolah || '',
+          spreadsheetUrl: remoteT.spreadsheetUrl || localMatch?.spreadsheetUrl || '',
+        };
+      });
       
       // Keep any local teachers (e.g., registered locally but not pushed yet, or added offline)
       localTeachers.forEach(localT => {
@@ -649,7 +717,15 @@ export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promis
     const db = await response.json();
     let currentTeachers = loadTeacherAccounts();
     if (db && Array.isArray(db.teachers)) {
-      const mergedTeachers = [...db.teachers];
+      const mergedTeachers = db.teachers.map((remoteT: any) => {
+        const localMatch = currentTeachers.find(l => l.username === remoteT.username || l.id === remoteT.id);
+        return {
+          ...remoteT,
+          email: remoteT.email || localMatch?.email || '',
+          asalSekolah: remoteT.asalSekolah || localMatch?.asalSekolah || '',
+          spreadsheetUrl: remoteT.spreadsheetUrl || localMatch?.spreadsheetUrl || '',
+        };
+      });
       currentTeachers.forEach(localT => {
         const exists = db.teachers.some((t: any) => t.username === localT.username || t.id === localT.id);
         if (!exists) {

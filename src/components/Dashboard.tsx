@@ -4,9 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import { Users, Award, CalendarCheck, BookOpen, BellRing, Plus, Trash2, ArrowRight, Star, Database, RefreshCw, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { Users, Award, CalendarCheck, BookOpen, BellRing, Plus, Trash2, ArrowRight, Star, Database, RefreshCw, CheckCircle2, AlertCircle, Clock, Wifi, WifiOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Siswa, Nilai, Presensi, Pembelajaran, Pengumuman, AppSettings } from '../types';
+import SyncStatusIndicator from './SyncStatusIndicator';
 
 interface DashboardProps {
   siswaList: Siswa[];
@@ -19,6 +20,10 @@ interface DashboardProps {
   onDeletePengumuman: (id: string) => void;
   settings: AppSettings;
   onSyncSpreadsheet?: () => Promise<void>;
+  isOnline?: boolean;
+  isSyncing?: boolean;
+  syncError?: string | null;
+  lastSyncTime?: Date | null;
 }
 
 export default function Dashboard({
@@ -32,18 +37,24 @@ export default function Dashboard({
   onDeletePengumuman,
   settings,
   onSyncSpreadsheet,
+  isOnline = true,
+  isSyncing = false,
+  syncError = null,
+  lastSyncTime = null,
 }: DashboardProps) {
   const [showAddAnnounce, setShowAddAnnounce] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState<'Penting' | 'Info' | 'Tugas'>('Info');
 
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [localSyncing, setLocalSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
+
+  const activeSyncing = isSyncing || localSyncing;
 
   const handleSync = async () => {
     if (!onSyncSpreadsheet) return;
-    setIsSyncing(true);
+    setLocalSyncing(true);
     setSyncMessage('');
     try {
       await onSyncSpreadsheet();
@@ -53,7 +64,7 @@ export default function Dashboard({
       setSyncMessage('Sinkronisasi gagal. Silakan periksa URL Google Apps Script Anda.');
       setTimeout(() => setSyncMessage(''), 5000);
     } finally {
-      setIsSyncing(false);
+      setLocalSyncing(false);
     }
   };
 
@@ -162,7 +173,7 @@ export default function Dashboard({
       {/* Google Spreadsheet Sync Banner */}
       <div className="w-full">
         {settings.spreadsheetUrl ? (
-          <div className="p-4 rounded-3xl bg-emerald-50 border border-emerald-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="p-4 rounded-3xl bg-emerald-50/80 border border-emerald-200/80 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0 shadow-sm">
                 <Database size={18} />
@@ -172,10 +183,18 @@ export default function Dashboard({
                   <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest leading-none">Database Google Spreadsheet</span>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 </div>
-                <h3 className="text-xs font-bold text-slate-800 mt-1">Tersinkronisasi Secara Real-Time</h3>
+                <h3 className="text-xs font-bold text-slate-800 mt-1 flex items-center gap-2">
+                  <span>Sinkronisasi Data Guru</span>
+                  {lastSyncTime && (
+                    <span className="text-[10px] font-normal text-slate-500">
+                      (Terakhir: {lastSyncTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })})
+                    </span>
+                  )}
+                </h3>
                 <p className="text-[10px] text-slate-500 font-mono truncate max-w-xs md:max-w-md">{settings.spreadsheetUrl}</p>
               </div>
             </div>
+
             <div className="flex items-center gap-3 w-full sm:w-auto self-stretch sm:self-auto justify-end">
               {syncMessage && (
                 <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-1">
@@ -183,13 +202,23 @@ export default function Dashboard({
                   {syncMessage}
                 </span>
               )}
+              
+              <SyncStatusIndicator
+                isOnline={isOnline}
+                spreadsheetUrl={settings.spreadsheetUrl}
+                isSyncing={activeSyncing}
+                syncError={syncError}
+                lastSyncTime={lastSyncTime}
+                onManualSync={handleSync}
+              />
+
               <button
                 onClick={handleSync}
-                disabled={isSyncing}
+                disabled={activeSyncing}
                 className="px-4 py-2.5 rounded-xl bg-white hover:bg-emerald-100/50 border border-slate-200 hover:border-emerald-300 text-slate-700 font-bold text-xs flex items-center gap-2 cursor-pointer transition-all shadow-sm active:scale-95 disabled:opacity-50"
               >
-                <RefreshCw size={12} className={`text-slate-500 ${isSyncing ? 'animate-spin text-emerald-600' : ''}`} />
-                <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}</span>
+                <RefreshCw size={12} className={`text-slate-500 ${activeSyncing ? 'animate-spin text-emerald-600' : ''}`} />
+                <span>{activeSyncing ? 'Menyinkronkan...' : 'Sinkronkan'}</span>
               </button>
             </div>
           </div>
@@ -207,13 +236,23 @@ export default function Dashboard({
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setCurrentMenu('settings')}
-              className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-2 cursor-pointer transition-all shadow-md shadow-amber-100 shrink-0 active:scale-95"
-            >
-              <Database size={12} />
-              <span>Hubungkan Spreadsheet</span>
-            </button>
+            
+            <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+              <SyncStatusIndicator
+                isOnline={isOnline}
+                spreadsheetUrl={settings.spreadsheetUrl}
+                isSyncing={isSyncing}
+                syncError={syncError}
+                lastSyncTime={lastSyncTime}
+              />
+              <button
+                onClick={() => setCurrentMenu('settings')}
+                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-2 cursor-pointer transition-all shadow-md shadow-amber-100 shrink-0 active:scale-95"
+              >
+                <Database size={12} />
+                <span>Hubungkan Spreadsheet</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

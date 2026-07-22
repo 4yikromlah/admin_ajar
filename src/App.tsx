@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KeyRound, X, GraduationCap } from 'lucide-react';
+import { KeyRound, X, GraduationCap, LayoutDashboard } from 'lucide-react';
 
 // Import subkomponen pendukung
 import Sidebar from './components/Sidebar';
@@ -19,6 +19,7 @@ import SettingsComponent from './components/Settings';
 import SiswaDashboard from './components/SiswaDashboard';
 import Login from './components/Login';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
+import SyncStatusIndicator from './components/SyncStatusIndicator';
 
 // Import tipe data & penanganan penyimpanan lokal
 import { Siswa, Nilai, Presensi, Pembelajaran, Pengumuman, AppSettings, Rangkuman } from './types';
@@ -53,6 +54,28 @@ export default function App() {
   const [isSuperAdminLoggedIn, setIsSuperAdminLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem('isSuperAdminLoggedIn') === 'true';
   });
+
+  // State Sync Status Real-time
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(() => {
+    const saved = localStorage.getItem('smasa_last_sync_time');
+    return saved ? new Date(saved) : null;
+  });
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // State Navigasi
   const [currentMenu, setCurrentMenu] = useState('dashboard');
@@ -90,24 +113,42 @@ export default function App() {
   };
 
   const handleSyncSpreadsheet = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    setSyncError(null);
     try {
       const success = await pullFromGoogleSheets();
       if (success) {
         reloadAllStates();
+        const now = new Date();
+        setLastSyncTime(now);
+        localStorage.setItem('smasa_last_sync_time', now.toISOString());
       } else {
-        throw new Error("Gagal mengambil data.");
+        throw new Error("Gagal mengambil data dari Spreadsheet.");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Gagal sinkronisasi dari Google Sheets:", e);
+      setSyncError(e.message || "Gagal sinkronisasi");
       throw e;
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   const syncPush = async () => {
+    if (!settings.spreadsheetUrl || !navigator.onLine) return;
+    setIsSyncing(true);
+    setSyncError(null);
     try {
       await pushToGoogleSheets();
-    } catch (e) {
+      const now = new Date();
+      setLastSyncTime(now);
+      localStorage.setItem('smasa_last_sync_time', now.toISOString());
+    } catch (e: any) {
       console.error("Gagal sinkron otomatis ke Google Sheets:", e);
+      setSyncError("Gagal menyimpan ke Google Sheets");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -119,11 +160,19 @@ export default function App() {
     saveSettings(updated);
 
     if (newUrl && newUrl !== oldUrl) {
+      setIsSyncing(true);
       try {
         await pushToGoogleSheets();
+        const now = new Date();
+        setLastSyncTime(now);
+        localStorage.setItem('smasa_last_sync_time', now.toISOString());
+        setSyncError(null);
         alert("Koneksi Spreadsheet Berhasil! Seluruh data lokal Anda telah berhasil diunggah ke Google Sheet.");
-      } catch (e) {
+      } catch (e: any) {
+        setSyncError("Gagal terhubung ke URL Spreadsheet");
         alert("Gagal mengunggah data ke Spreadsheet. Pastikan URL Apps Script benar dan diatur agar memiliki akses 'Siapa saja'.");
+      } finally {
+        setIsSyncing(false);
       }
     } else {
       syncPush();
@@ -159,14 +208,22 @@ export default function App() {
   // Sinkronisasi otomatis saat aplikasi pertama kali dimuat
   React.useEffect(() => {
     const autoSync = async () => {
-      if (settings.spreadsheetUrl) {
+      if (settings.spreadsheetUrl && navigator.onLine) {
+        setIsSyncing(true);
         try {
           const success = await pullFromGoogleSheets();
           if (success) {
             reloadAllStates();
+            const now = new Date();
+            setLastSyncTime(now);
+            localStorage.setItem('smasa_last_sync_time', now.toISOString());
+            setSyncError(null);
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error("Gagal sinkronisasi awal:", e);
+          setSyncError("Gagal sinkronisasi awal");
+        } finally {
+          setIsSyncing(false);
         }
       }
     };
@@ -375,6 +432,10 @@ export default function App() {
             onDeletePengumuman={handleDeletePengumuman}
             settings={settings}
             onSyncSpreadsheet={handleSyncSpreadsheet}
+            isOnline={isOnline}
+            isSyncing={isSyncing}
+            syncError={syncError}
+            lastSyncTime={lastSyncTime}
           />
         );
       case 'siswa':
@@ -432,6 +493,7 @@ export default function App() {
           <SettingsComponent
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
+            onReloadAllStates={reloadAllStates}
           />
         );
       default:
@@ -577,10 +639,49 @@ export default function App() {
           setMobileOpen={setMobileOpen}
           onLogout={handleTeacherLogout}
           settings={settings}
+          isOnline={isOnline}
+          isSyncing={isSyncing}
+          syncError={syncError}
+          lastSyncTime={lastSyncTime}
+          onManualSync={handleSyncSpreadsheet}
         />
 
         {/* 2. Main Content Canvas */}
         <main className="flex-1 p-4 sm:p-6 md:p-8 pt-20 md:pt-8 max-w-7xl mx-auto w-full transition-all duration-300">
+          {/* DESKTOP TOP NAVIGATION BAR WITH REAL-TIME SYNC STATUS */}
+          <div className="hidden md:flex items-center justify-between mb-6 p-4 rounded-2xl bg-neu-bg neu-flat border border-white/40">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 text-white font-bold flex items-center justify-center shadow-md shadow-blue-500/10">
+                <GraduationCap size={20} />
+              </div>
+              <div>
+                <h1 className="text-sm font-extrabold text-slate-800 tracking-tight leading-tight">
+                  {currentMenu === 'dashboard' && 'Dashboard Utama'}
+                  {currentMenu === 'siswa' && 'Kelola Data Siswa'}
+                  {currentMenu === 'nilai' && 'Kelola Data Nilai'}
+                  {currentMenu === 'presensi' && 'Kelola Presensi Siswa'}
+                  {currentMenu === 'pembelajaran' && 'Kelola Pembelajaran'}
+                  {currentMenu === 'laporan' && 'Laporan & Rekapitulasi'}
+                  {currentMenu === 'settings' && 'Pengaturan Aplikasi'}
+                </h1>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {settings.namaGuru || 'Guru Administrator'} &bull; {settings.kopSekolah || 'SMASA Online'} ({settings.mataPelajaran || 'Informatika'})
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <SyncStatusIndicator
+                isOnline={isOnline}
+                spreadsheetUrl={settings.spreadsheetUrl}
+                isSyncing={isSyncing}
+                syncError={syncError}
+                lastSyncTime={lastSyncTime}
+                onManualSync={handleSyncSpreadsheet}
+              />
+            </div>
+          </div>
+
           <AnimatePresence mode="wait">
             <motion.div
               key={currentMenu}
