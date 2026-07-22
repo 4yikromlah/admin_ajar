@@ -212,6 +212,46 @@ app.post('/api/forgot-password', async (req, res) => {
     }
   }
 
+  // Fallback / Primary dispatch via Google Apps Script (Gmail API) if spreadsheetUrl is set
+  const emailHtmlContent = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h2 style="color: #4f46e5; font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.025em;">SMASA Online</h2>
+        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; font-weight: 700;">Portal Pembelajaran & Penilaian</span>
+      </div>
+      <hr style="border: none; border-top: 1px solid #f1f5f9; margin-bottom: 24px;" />
+      <p style="font-size: 15px; color: #334155; line-height: 1.6;">Halo <strong>${targetName}</strong>,</p>
+      <p style="font-size: 15px; color: #334155; line-height: 1.6;">Kami menerima permintaan untuk mengatur ulang kata sandi akun SMASA Online Anda.</p>
+      <p style="font-size: 15px; color: #334155; line-height: 1.6; margin-bottom: 28px;">Silakan klik tombol di bawah ini untuk mengatur ulang kata sandi Anda dengan yang baru:</p>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${resetLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 14px; display: inline-block; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);">Atur Ulang Kata Sandi Baru</a>
+      </div>
+      <p style="color: #64748b; font-size: 12px; line-height: 1.6; background-color: #f8fafc; padding: 12px; border-radius: 8px;">Jika Anda tidak meminta pengaturan ulang ini, silakan abaikan email ini dengan aman.</p>
+      <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+      <p style="color: #94a3b8; font-size: 11px; word-break: break-all; line-height: 1.5;">Apabila tombol tidak bekerja, salin tautan berikut:<br/><a href="${resetLink}" style="color: #4f46e5; text-decoration: underline;">${resetLink}</a></p>
+    </div>
+  `;
+
+  if (!emailSent && spreadsheetUrl) {
+    try {
+      const gasRes = await fetch(spreadsheetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sendEmail',
+          recipient: targetEmail,
+          subject: 'Atur Ulang Kata Sandi Akun SMASA Online',
+          body: emailHtmlContent
+        })
+      });
+      if (gasRes.ok) {
+        emailSent = true;
+      }
+    } catch (gasErr: any) {
+      console.error('[Forgot Password] Google Apps Script email dispatch failed:', gasErr);
+    }
+  }
+
   return res.json({
     success: true,
     message: emailSent 

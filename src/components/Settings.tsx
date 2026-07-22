@@ -807,6 +807,22 @@ function doPost(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
   var payload = JSON.parse(e.postData.contents);
+  if (payload && payload.action === 'sendEmail') {
+    if (payload.recipient && payload.subject && payload.body) {
+      try {
+        MailApp.sendEmail({
+          to: payload.recipient,
+          subject: payload.subject,
+          htmlBody: payload.body
+        });
+        return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Email dikirim via Gmail" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      } catch(mErr) {
+        return ContentService.createTextOutput(JSON.stringify({ status: "error", message: mErr.toString() }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+  }
   for (var key in payload) {
     var sheetName = key.charAt(0).toUpperCase() + key.slice(1);
     var sheet = ss.getSheetByName(sheetName);
@@ -903,6 +919,22 @@ function doPost(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
   var payload = JSON.parse(e.postData.contents);
+  if (payload && payload.action === 'sendEmail') {
+    if (payload.recipient && payload.subject && payload.body) {
+      try {
+        MailApp.sendEmail({
+          to: payload.recipient,
+          subject: payload.subject,
+          htmlBody: payload.body
+        });
+        return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Email dikirim via Gmail" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      } catch(mErr) {
+        return ContentService.createTextOutput(JSON.stringify({ status: "error", message: mErr.toString() }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+  }
   for (var key in payload) {
     var sheetName = key.charAt(0).toUpperCase() + key.slice(1);
     var sheet = ss.getSheetByName(sheetName);

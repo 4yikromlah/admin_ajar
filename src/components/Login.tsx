@@ -412,8 +412,32 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       const baseOrigin = window.location.origin;
       const resetLink = `${baseOrigin}${baseOrigin.endsWith('/') ? '' : '/'}?resetToken=${token}&username=${encodeURIComponent(cleanUsername)}`;
 
-      setForgotSuccess(`Instruksi dan tautan atur ulang kata sandi telah dikirimkan ke email ${forgotEmail}!`);
+      setForgotSuccess(`Instruksi dan tautan atur ulang kata sandi telah dikirimkan untuk ${targetName || cleanUsername}!`);
       setSimulatedResetLink(resetLink);
+
+      // Trigger Apps Script email dispatch if spreadsheet URL is set
+      const targetSheetUrl = settings?.spreadsheetUrl || localStorage.getItem('smasa_spreadsheet_url');
+      if (targetSheetUrl) {
+        try {
+          fetch(targetSheetUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'sendEmail',
+              recipient: cleanEmail,
+              subject: 'Atur Ulang Kata Sandi Akun SMASA Online',
+              body: `<div style="font-family: sans-serif; padding: 20px;">
+                <h2>SMASA Online - Atur Ulang Kata Sandi</h2>
+                <p>Halo <strong>${targetName || cleanUsername}</strong>,</p>
+                <p>Silakan klik tautan di bawah ini untuk mengatur ulang kata sandi Anda:</p>
+                <p><a href="${resetLink}" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Atur Ulang Kata Sandi</a></p>
+                <p>Atau buka tautan: ${resetLink}</p>
+              </div>`
+            })
+          });
+        } catch (e) {}
+      }
     };
 
     try {
@@ -928,28 +952,34 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                     <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-900 space-y-3 text-xs">
                       <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-700">
                         <Mail size={14} className="text-indigo-600" />
-                        <span>Verifikasi Email Terkirim</span>
+                        <span>Permintaan Reset Diterima</span>
                       </div>
                       <p className="font-medium text-slate-600 leading-relaxed">
-                        Silakan buka email Anda di <strong className="text-slate-800 font-bold">{forgotEmail}</strong> dan periksa kotak masuk (inbox atau folder spam) untuk mengklik tautan pemulihan kata sandi.
+                        Permintaan reset kata sandi telah diproses untuk akun dengan email <strong className="text-slate-800 font-bold">{forgotEmail}</strong>.
                       </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      
+                      <div className="space-y-2 pt-1">
+                        <a
+                          href={simulatedResetLink}
+                          className="flex items-center justify-center gap-2 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-xs transition-all shadow-md active:scale-95 text-center uppercase tracking-wider"
+                        >
+                          <KeyRound size={16} />
+                          <span>Klik Di Sini Untuk Reset Kata Sandi</span>
+                        </a>
+
                         <a
                           href="https://mail.google.com"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center justify-center gap-2 py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm active:scale-95"
+                          className="flex items-center justify-center gap-2 py-2 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-all shadow-sm active:scale-95"
                         >
-                          <Mail size={14} />
-                          <span>Buka Gmail</span>
+                          <Mail size={14} className="text-rose-500" />
+                          <span>Buka Gmail ({forgotEmail})</span>
                         </a>
-                        <a
-                          href={simulatedResetLink}
-                          className="flex items-center justify-center gap-2 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm active:scale-95"
-                        >
-                          <KeyRound size={14} />
-                          <span>Buka Link Reset</span>
-                        </a>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-800 leading-normal">
+                        <span className="font-bold">Info Pengiriman Email:</span> Jika email belum muncul di Inbox/Spam Gmail Anda (dikarenakan batasan server SMTP / kuota Google Apps Script), Anda dapat langsung mengklik tombol biru di atas untuk mengatur ulang kata sandi secara instan.
                       </div>
                     </div>
                   )}
