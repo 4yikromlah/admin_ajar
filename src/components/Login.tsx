@@ -367,46 +367,45 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       // 1. Check Super Admin
       if (cleanUsername === 'admin') {
         const validAdminEmails = [
-          (settings.adminEmail || '').toLowerCase(),
+          (settings.adminEmail || '').trim().toLowerCase(),
           '4yik.romlah@gmail.com',
           '4ndr1saya@gmail.com'
-        ];
-        if (validAdminEmails.includes(cleanEmail) || cleanEmail.length > 0) {
-          isMatched = true;
-          targetName = 'Super Admin';
+        ].filter(Boolean);
+        if (!validAdminEmails.includes(cleanEmail)) {
+          throw new Error(`Alamat email "${forgotEmail}" tidak sesuai dengan email terdaftar untuk Super Admin.`);
         }
+        isMatched = true;
+        targetName = 'Super Admin';
       } else {
         // 2. Check Teachers list
-        const localTeacher = teachersList.find(
-          t => t.username.toLowerCase() === cleanUsername && 
-               (!t.email || t.email.trim().toLowerCase() === cleanEmail || t.email.trim() === '')
-        );
-        if (localTeacher) {
+        const teacherByUsername = teachersList.find(t => t.username.toLowerCase() === cleanUsername);
+        if (teacherByUsername) {
+          const registeredEmail = (teacherByUsername.email || '').trim().toLowerCase();
+          if (registeredEmail && registeredEmail !== cleanEmail) {
+            throw new Error(`Alamat email "${forgotEmail}" tidak sesuai dengan email terdaftar untuk akun "${forgotUsername}".`);
+          }
           isMatched = true;
-          targetName = localTeacher.nama;
+          targetName = teacherByUsername.nama;
         } else {
-          // 3. Check any teacher by username alone if teacher list is non-empty
-          const teacherByUsername = teachersList.find(t => t.username.toLowerCase() === cleanUsername);
-          if (teacherByUsername) {
-            isMatched = true;
-            targetName = teacherByUsername.nama;
-          } else {
-            // 4. Check Siswa list from prop
-            if (Array.isArray(siswaList) && siswaList.length > 0) {
-              const matchedSiswa = siswaList.find(
-                s => s.nis && s.nis.toLowerCase() === cleanUsername
-              );
-              if (matchedSiswa) {
-                isMatched = true;
-                targetName = matchedSiswa.nama;
+          // 3. Check Siswa list from prop
+          if (Array.isArray(siswaList) && siswaList.length > 0) {
+            const matchedSiswa = siswaList.find(
+              s => s.nis && s.nis.toLowerCase() === cleanUsername
+            );
+            if (matchedSiswa) {
+              const studentEmail = ((matchedSiswa as any).email || '').trim().toLowerCase();
+              if (studentEmail && studentEmail !== cleanEmail) {
+                throw new Error(`Alamat email "${forgotEmail}" tidak sesuai dengan email terdaftar untuk NIS "${forgotUsername}".`);
               }
+              isMatched = true;
+              targetName = matchedSiswa.nama;
             }
           }
         }
       }
 
       if (!isMatched) {
-        throw new Error(`Akun dengan username "${cleanUsername}" dan email "${cleanEmail}" tidak ditemukan.`);
+        throw new Error(`Username "${forgotUsername}" tidak ditemukan atau kombinasi email tidak sesuai.`);
       }
 
       const token = 'RESET_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
@@ -421,13 +420,26 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       // Local check data
       let clientVerified = false;
       let clientName = '';
-      if (cleanUsername !== 'admin') {
+      if (cleanUsername === 'admin') {
+        const validAdminEmails = [
+          (settings.adminEmail || '').trim().toLowerCase(),
+          '4yik.romlah@gmail.com',
+          '4ndr1saya@gmail.com'
+        ].filter(Boolean);
+        if (validAdminEmails.includes(cleanEmail)) {
+          clientVerified = true;
+          clientName = 'Super Admin';
+        }
+      } else {
         const localTeacher = teachersList.find(
           t => t.username.toLowerCase() === cleanUsername
         );
         if (localTeacher) {
-          clientVerified = true;
-          clientName = localTeacher.nama;
+          const regEmail = (localTeacher.email || '').trim().toLowerCase();
+          if (!regEmail || regEmail === cleanEmail) {
+            clientVerified = true;
+            clientName = localTeacher.nama;
+          }
         }
       }
 

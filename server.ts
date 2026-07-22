@@ -104,10 +104,12 @@ app.post('/api/forgot-password', async (req, res) => {
   // 1. Check if Super Admin
   if (cleanUsername === 'admin') {
     const validAdminEmails = [adminEmail.toLowerCase(), '4yik.romlah@gmail.com', '4ndr1saya@gmail.com'];
-    if (validAdminEmails.includes(cleanEmail) || clientVerified === true) {
-      targetEmail = cleanEmail || adminEmail;
+    if (validAdminEmails.includes(cleanEmail)) {
+      targetEmail = cleanEmail;
       targetName = 'Super Admin';
       isMatched = true;
+    } else {
+      return res.status(400).json({ error: `Alamat email "${email}" tidak sesuai dengan email terdaftar untuk Super Admin!` });
     }
   } else {
     // 2. Check Teacher Accounts using central spreadsheet
@@ -117,13 +119,18 @@ app.post('/api/forgot-password', async (req, res) => {
         if (response.ok) {
           const db = await response.json();
           if (db && Array.isArray(db.teachers)) {
-            const matchedTeacher = db.teachers.find(
-              (t: any) => t.username.trim().toLowerCase() === cleanUsername && 
-                          (t.email || '').trim().toLowerCase() === cleanEmail
+            const teacherByUsername = db.teachers.find(
+              (t: any) => t.username.trim().toLowerCase() === cleanUsername
             );
-            if (matchedTeacher) {
-              targetEmail = matchedTeacher.email || cleanEmail;
-              targetName = matchedTeacher.nama;
+            if (teacherByUsername) {
+              const sheetEmail = (teacherByUsername.email || '').trim().toLowerCase();
+              if (sheetEmail && sheetEmail !== cleanEmail) {
+                return res.status(400).json({ 
+                  error: `Alamat email "${email}" tidak sesuai dengan email terdaftar di spreadsheet untuk username "${username}".` 
+                });
+              }
+              targetEmail = sheetEmail || cleanEmail;
+              targetName = teacherByUsername.nama;
               isMatched = true;
             }
           }
