@@ -1016,7 +1016,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                         required
                         value={forgotEmail}
                         onChange={(e) => setForgotEmail(e.target.value)}
-                        placeholder="Contoh: 4ndr1saya@gmail.com"
+                        placeholder="masukkan email terdaftar"
                         className="w-full text-xs pl-11 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 font-semibold text-slate-700 placeholder-slate-400 shadow-inner"
                       />
                     </div>
