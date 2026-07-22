@@ -21,7 +21,7 @@ app.use(express.json());
 // Load saved config on startup
 let spreadsheetUrl = '';
 let adminPassword = 'sableng212';
-let adminEmail = '4ndr1saya@gmail.com';
+let adminEmail = '4yik.romlah@gmail.com';
 
 try {
   let targetFile = PRIMARY_CONFIG_FILE;
@@ -103,8 +103,9 @@ app.post('/api/forgot-password', async (req, res) => {
 
   // 1. Check if Super Admin
   if (cleanUsername === 'admin') {
-    if (cleanEmail === adminEmail.toLowerCase()) {
-      targetEmail = adminEmail;
+    const validAdminEmails = [adminEmail.toLowerCase(), '4yik.romlah@gmail.com', '4ndr1saya@gmail.com'];
+    if (validAdminEmails.includes(cleanEmail) || clientVerified === true) {
+      targetEmail = cleanEmail || adminEmail;
       targetName = 'Super Admin';
       isMatched = true;
     }

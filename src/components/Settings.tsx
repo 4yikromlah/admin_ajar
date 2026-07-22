@@ -739,6 +739,16 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
                   <li>Klik <strong>Terapkan</strong>, setujui izin keamanan Google, lalu salin <strong>URL Aplikasi Web</strong> yang dihasilkan dan tempel di kolom input di atas.</li>
                 </ol>
 
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[10px] space-y-1">
+                  <span className="font-bold flex items-center gap-1">
+                    <AlertCircle size={12} className="text-amber-600" />
+                    Catatan Penting Seputar Test Run di Apps Script:
+                  </span>
+                  <p className="leading-relaxed">
+                    Jangan klik tombol <strong>"Jalankan" (Run)</strong> pada fungsi <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold">doPost</code> langsung dari editor Apps Script. Menjalankannya secara manual akan menyebabkan error <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-rose-700 font-bold">TypeError: Cannot read properties of undefined (reading 'postData')</code> karena fungsi tersebut membutuhkan payload HTTP dari web app. Langkah yang benar cukup lakukan <strong>Deploy / Terapkan sebagai Aplikasi Web</strong>.
+                  </p>
+                </div>
+
                 <div className="mt-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[9px] font-bold text-slate-400 uppercase font-mono">Kode Google Apps Script:</span>
@@ -783,6 +793,12 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
 }
 
 function doPost(e) {
+  if (!e || !e.postData || !e.postData.contents) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "error", 
+      message: "Fungsi doPost() tidak dapat dijalankan secara langsung lewat tombol Run di editor Apps Script. Fungsi ini berjalan otomatis saat dipanggil dari aplikasi SMASA Online." 
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) {
     return ContentService.createTextOutput(JSON.stringify({ 
@@ -873,6 +889,12 @@ function doPost(e) {
 }
 
 function doPost(e) {
+  if (!e || !e.postData || !e.postData.contents) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "error", 
+      message: "Fungsi doPost() tidak dapat dijalankan secara langsung lewat tombol Run di editor Apps Script. Fungsi ini berjalan otomatis saat dipanggil dari aplikasi SMASA Online." 
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) {
     return ContentService.createTextOutput(JSON.stringify({ 
