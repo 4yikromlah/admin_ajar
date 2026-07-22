@@ -42,6 +42,8 @@ import {
   pullFromGoogleSheets,
   saveTeacherAccounts,
   fetchSuperAdminSpreadsheetUrlFromServer,
+  pullSuperAdminFromGoogleSheets,
+  getGoogleAppsScriptUrl,
 } from './data';
 
 export default function App() {
@@ -179,27 +181,29 @@ export default function App() {
     }
   };
 
-  // Sinkronisasi daftar guru dari spreadsheet pusat pada saat mount
+  // Sinkronisasi daftar guru dari spreadsheet pusat & data aplikasi pada saat mount
   React.useEffect(() => {
     const syncTeacherListAndSettingsOnMount = async () => {
       try {
-        const url = await fetchSuperAdminSpreadsheetUrlFromServer();
-        if (url) {
-          const response = await fetch(url, {
-            method: 'GET',
-            mode: 'cors',
-          });
-          if (response.ok) {
-            const db = await response.json();
-            if (db && Array.isArray(db.teachers)) {
-              saveTeacherAccounts(db.teachers);
-              // Segarkan settings agar loadSettings() membaca spreadsheetUrl terbaru yang diperbarui dari device lain
-              setSettings(loadSettings());
-            }
+        await pullSuperAdminFromGoogleSheets();
+        reloadAllStates();
+        // Jika ada spreadsheet URL guru/siswa aktif, tarik data aplikasi terbaru secara otomatis
+        const scriptUrl = getGoogleAppsScriptUrl();
+        if (scriptUrl && navigator.onLine) {
+          setIsSyncing(true);
+          const ok = await pullFromGoogleSheets();
+          if (ok) {
+            reloadAllStates();
+            const now = new Date();
+            setLastSyncTime(now);
+            localStorage.setItem('smasa_last_sync_time', now.toISOString());
+            setSyncError(null);
           }
+          setIsSyncing(false);
         }
       } catch (err) {
         console.warn("[App Sync Teacher List Error] Gagal sinkronisasi data guru:", err);
+        setIsSyncing(false);
       }
     };
     syncTeacherListAndSettingsOnMount();
@@ -568,13 +572,25 @@ export default function App() {
     }, 0);
   };
 
-  const handleTeacherLoginSuccess = (username: string) => {
+  const handleTeacherLoginSuccess = async (username: string) => {
     localStorage.setItem('loggedTeacherUsername', username);
     localStorage.setItem('isTeacherLoggedIn', 'true');
     setIsTeacherLoggedIn(true);
-    setTimeout(() => {
-      reloadAllStates();
-    }, 0);
+    reloadAllStates();
+    try {
+      setIsSyncing(true);
+      const success = await pullFromGoogleSheets();
+      if (success) {
+        reloadAllStates();
+        const now = new Date();
+        setLastSyncTime(now);
+        localStorage.setItem('smasa_last_sync_time', now.toISOString());
+      }
+    } catch (e) {
+      console.warn("Gagal auto sync saat login guru:", e);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleSuperAdminLoginSuccess = () => {
@@ -598,7 +614,7 @@ export default function App() {
         settings={settings}
         onTeacherLoginSuccess={handleTeacherLoginSuccess}
         onSuperAdminLoginSuccess={handleSuperAdminLoginSuccess}
-        onStudentLoginSuccess={(siswa, teacherUsername) => {
+        onStudentLoginSuccess={async (siswa, teacherUsername) => {
           if (teacherUsername) {
             localStorage.setItem('loggedTeacherUsername', teacherUsername);
           } else {
@@ -607,6 +623,20 @@ export default function App() {
           localStorage.setItem('loggedSiswa', JSON.stringify(siswa));
           reloadAllStates();
           setLoggedSiswa(siswa);
+          try {
+            setIsSyncing(true);
+            const success = await pullFromGoogleSheets();
+            if (success) {
+              reloadAllStates();
+              const now = new Date();
+              setLastSyncTime(now);
+              localStorage.setItem('smasa_last_sync_time', now.toISOString());
+            }
+          } catch (e) {
+            console.warn("Gagal auto sync saat login siswa:", e);
+          } finally {
+            setIsSyncing(false);
+          }
         }}
       />
     );

@@ -105,7 +105,7 @@ export function getGoogleAppsScriptUrl(): string {
     // Fallback to central teacher list spreadsheetUrl
     if (username) {
       const teachers = loadTeacherAccounts();
-      const me = teachers.find(t => t.username === username);
+      const me = teachers.find(t => t.username.toLowerCase() === username.toLowerCase());
       if (me && me.spreadsheetUrl) {
         return me.spreadsheetUrl;
       }
@@ -690,12 +690,12 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     teachers: loadTeacherAccounts(),
   };
 
-  // 1. Try server-side proxy first (bypasses browser CORS & iframe sandbox limitations)
+  // 1. Try server-side gas-proxy first (uses exact URL & bypasses browser CORS/iframe restrictions)
   try {
-    const proxyRes = await fetch('/api/superadmin/push', {
+    const proxyRes = await fetch('/api/gas-proxy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(db),
+      body: JSON.stringify({ url, method: 'POST', body: db }),
     });
     if (proxyRes.ok) {
       const result = await proxyRes.json().catch(() => ({ status: 'success' }));
@@ -704,7 +704,7 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
       }
     }
   } catch (proxyErr) {
-    console.warn("[Super Admin Sync] Server proxy push failed, falling back to direct fetch:", proxyErr);
+    console.warn("[Super Admin Sync] Server gas-proxy push failed, falling back:", proxyErr);
   }
 
   // 2. Direct client fetch fallback
@@ -740,17 +740,31 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
 
   let db: any = null;
 
-  // 1. First try fetching via server-side proxy (bypasses browser CORS & iframe redirect blocks)
+  // 1. First try fetching via server-side gas-proxy (uses exact URL & bypasses browser CORS/iframe restrictions)
   try {
-    const proxyRes = await fetch('/api/superadmin/pull');
+    const proxyRes = await fetch('/api/gas-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, method: 'GET' }),
+    });
     if (proxyRes.ok) {
       db = await proxyRes.json();
     }
   } catch (proxyErr) {
-    console.warn("[Super Admin Sync] Server proxy pull failed, falling back to direct fetch:", proxyErr);
+    console.warn("[Super Admin Sync] Server gas-proxy pull failed, trying fallback:", proxyErr);
   }
 
-  // 2. Fallback to direct client fetch if server proxy is unavailable or failed
+  // 2. Fallback to /api/superadmin/pull
+  if (!db) {
+    try {
+      const proxyRes = await fetch('/api/superadmin/pull');
+      if (proxyRes.ok) {
+        db = await proxyRes.json();
+      }
+    } catch (err) {}
+  }
+
+  // 3. Fallback to direct client fetch if server proxy is unavailable
   if (!db) {
     try {
       const response = await fetch(url, {
