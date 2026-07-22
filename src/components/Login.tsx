@@ -412,7 +412,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       const baseOrigin = window.location.origin;
       const resetLink = `${baseOrigin}${baseOrigin.endsWith('/') ? '' : '/'}?resetToken=${token}&username=${encodeURIComponent(cleanUsername)}`;
 
-      setForgotSuccess(`Tautan atur ulang kata sandi berhasil dibuat untuk ${targetName}!`);
+      setForgotSuccess(`Instruksi dan tautan atur ulang kata sandi telah dikirimkan ke email ${forgotEmail}!`);
       setSimulatedResetLink(resetLink);
     };
 
@@ -925,20 +925,32 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                   </p>
                   
                   {simulatedResetLink && (
-                    <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-900 space-y-2 text-xs">
+                    <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-900 space-y-3 text-xs">
                       <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-700">
-                        <span className="w-2 h-2 bg-indigo-500 rounded-full animate-ping"></span>
-                        Sandbox Simulation
+                        <Mail size={14} className="text-indigo-600" />
+                        <span>Verifikasi Email Terkirim</span>
                       </div>
-                      <p className="font-semibold text-slate-600 leading-normal">
-                        Karena Anda menjalankan aplikasi dalam sandbox preview, Anda dapat mengklik tombol simulasi di bawah ini untuk langsung mereset password tanpa membuka email:
+                      <p className="font-medium text-slate-600 leading-relaxed">
+                        Silakan buka email Anda di <strong className="text-slate-800 font-bold">{forgotEmail}</strong> dan periksa kotak masuk (inbox atau folder spam) untuk mengklik tautan pemulihan kata sandi.
                       </p>
-                      <a
-                        href={simulatedResetLink}
-                        className="block w-full py-2.5 text-center bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors shadow-sm mt-1 text-center"
-                      >
-                        Buka Link Atur Ulang Kata Sandi
-                      </a>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <a
+                          href="https://mail.google.com"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm active:scale-95"
+                        >
+                          <Mail size={14} />
+                          <span>Buka Gmail</span>
+                        </a>
+                        <a
+                          href={simulatedResetLink}
+                          className="flex items-center justify-center gap-2 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm active:scale-95"
+                        >
+                          <KeyRound size={14} />
+                          <span>Buka Link Reset</span>
+                        </a>
+                      </div>
                     </div>
                   )}
                 </div>
