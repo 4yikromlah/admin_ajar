@@ -18,10 +18,10 @@ const FALLBACK_CONFIG_FILE = path.join(__dirnameSafe, 'spreadsheet_config.json')
 
 app.use(express.json());
 
-// Load saved config on startup
-let spreadsheetUrl = '';
-let adminPassword = 'sableng212';
-let adminEmail = '4yik.romlah@gmail.com';
+// Load saved config on startup with environment variable fallbacks for Vercel & serverless environments
+let spreadsheetUrl = process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || '';
+let adminPassword = process.env.SUPERADMIN_PASSWORD || 'sableng212';
+let adminEmail = process.env.SUPERADMIN_EMAIL || '4yik.romlah@gmail.com';
 
 try {
   let targetFile = PRIMARY_CONFIG_FILE;
@@ -53,6 +53,81 @@ app.get('/api/superadmin-url', (req, res) => {
     adminPassword,
     adminEmail
   });
+});
+
+app.post('/api/gas-proxy', async (req, res) => {
+  const { url, method, body } = req.body;
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'URL Google Apps Script wajib disediakan' });
+  }
+  try {
+    const fetchOptions: RequestInit = {
+      method: method || 'GET',
+    };
+    if (method === 'POST' && body) {
+      fetchOptions.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+    const response = await fetch(url, fetchOptions);
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      data = { status: response.ok ? 'success' : 'error', raw: text };
+    }
+    return res.json(data);
+  } catch (err: any) {
+    console.error('[GAS Proxy Error]', err);
+    return res.status(500).json({ error: err?.message || 'Gagal terhubung ke Google Apps Script' });
+  }
+});
+
+app.get('/api/superadmin/pull', async (req, res) => {
+  if (!spreadsheetUrl) {
+    return res.status(400).json({ error: 'URL Spreadsheet Super Admin belum dikonfigurasi di server.' });
+  }
+  try {
+    const response = await fetch(spreadsheetUrl, { method: 'GET' });
+    if (!response.ok) {
+      return res.status(500).json({ error: `Gagal terhubung ke Google Apps Script (${response.statusText})` });
+    }
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return res.status(500).json({ error: 'Respon dari Google Apps Script bukan format JSON yang valid.', raw: text.substring(0, 200) });
+    }
+    return res.json(data);
+  } catch (err: any) {
+    console.error('[Server SuperAdmin Pull Error]', err);
+    return res.status(500).json({ error: err?.message || 'Gagal terhubung ke Google Apps Script dari server' });
+  }
+});
+
+app.post('/api/superadmin/push', async (req, res) => {
+  if (!spreadsheetUrl) {
+    return res.status(400).json({ error: 'URL Spreadsheet Super Admin belum dikonfigurasi di server.' });
+  }
+  try {
+    const response = await fetch(spreadsheetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(req.body),
+    });
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      data = { status: response.ok ? 'success' : 'error' };
+    }
+    return res.json(data);
+  } catch (err: any) {
+    console.error('[Server SuperAdmin Push Error]', err);
+    return res.status(500).json({ error: err?.message || 'Gagal terhubung ke Google Apps Script dari server' });
+  }
 });
 
 app.post('/api/superadmin-url', (req, res) => {

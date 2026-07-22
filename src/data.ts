@@ -138,6 +138,24 @@ export async function pushToGoogleSheets(): Promise<boolean> {
     rangkuman: loadRangkuman(),
   };
 
+  // 1. Try server proxy first to avoid CORS / iframe redirect issues on mobile/different gadgets
+  try {
+    const proxyRes = await fetch('/api/gas-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, method: 'POST', body: db }),
+    });
+    if (proxyRes.ok) {
+      const resData = await proxyRes.json().catch(() => ({ status: 'success' }));
+      if (resData.status === 'success' || proxyRes.ok) {
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('[GAS Proxy Push Warning] Proxy failed, falling back to direct fetch:', e);
+  }
+
+  // 2. Direct fallback
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -152,8 +170,6 @@ export async function pushToGoogleSheets(): Promise<boolean> {
       const result = await response.json();
       isSuccess = result.status === "success";
     } catch (e) {
-      // Jika request berhasil (status 200/201) tapi response JSON terblokir oleh CORS redirect sandbox Google,
-      // kita tetap anggap sukses karena data dipastikan sudah terkirim dan disimpan di Apps Script.
       if (response.ok) {
         isSuccess = true;
       }
@@ -181,53 +197,73 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
   const url = getGoogleAppsScriptUrl();
   if (!url) return false;
 
+  let db: any = null;
+
+  // 1. Try server proxy first to bypass CORS / iframe restrictions on different devices
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      mode: 'cors',
+    const proxyRes = await fetch('/api/gas-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, method: 'GET' }),
     });
-    if (!response.ok) throw new Error("Gagal mengambil data dari Google Sheets");
-    const db = await response.json();
-    
-    if (db) {
-      if (Array.isArray(db.siswa)) {
-        const localSiswa = loadSiswa();
-        saveSiswa(mergeArraysById(localSiswa, db.siswa));
-      }
-      if (Array.isArray(db.nilai)) {
-        const localNilai = loadNilai();
-        saveNilai(mergeArraysById(localNilai, db.nilai));
-      }
-      if (Array.isArray(db.presensi)) {
-        const localPresensi = loadPresensi();
-        savePresensi(mergeArraysById(localPresensi, db.presensi));
-      }
-      if (Array.isArray(db.pembelajaran)) {
-        const localPembelajaran = loadPembelajaran();
-        savePembelajaran(mergeArraysById(localPembelajaran, db.pembelajaran));
-      }
-      if (Array.isArray(db.pengumuman)) {
-        const localPengumuman = loadPengumuman();
-        savePengumuman(mergeArraysById(localPengumuman, db.pengumuman));
-      }
-      if (db.settings) {
-        const settingsObj = Array.isArray(db.settings) ? db.settings[0] : db.settings;
-        if (settingsObj && settingsObj.namaGuru) {
-          if (settingsObj.kkm) settingsObj.kkm = Number(settingsObj.kkm);
-          saveSettings({ ...DEFAULT_SETTINGS, ...settingsObj, spreadsheetUrl: url });
-        }
-      }
-      if (Array.isArray(db.rangkuman)) {
-        const localRangkuman = loadRangkuman();
-        saveRangkuman(mergeArraysById(localRangkuman, db.rangkuman));
-      }
-      return true;
+    if (proxyRes.ok) {
+      db = await proxyRes.json();
     }
-    return false;
-  } catch (error) {
-    console.error("[Google Sheets Sync Error] Gagal pull:", error);
-    throw error;
+  } catch (e) {
+    console.warn('[GAS Proxy Pull Warning] Proxy failed, falling back to direct fetch:', e);
   }
+
+  // 2. Direct fetch fallback
+  if (!db) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+      });
+      if (response.ok) {
+        db = await response.json();
+      }
+    } catch (directErr) {
+      console.error("[Google Sheets Sync Error] Direct pull failed:", directErr);
+    }
+  }
+
+  if (db) {
+    if (Array.isArray(db.siswa)) {
+      const localSiswa = loadSiswa();
+      saveSiswa(mergeArraysById(localSiswa, db.siswa));
+    }
+    if (Array.isArray(db.nilai)) {
+      const localNilai = loadNilai();
+      saveNilai(mergeArraysById(localNilai, db.nilai));
+    }
+    if (Array.isArray(db.presensi)) {
+      const localPresensi = loadPresensi();
+      savePresensi(mergeArraysById(localPresensi, db.presensi));
+    }
+    if (Array.isArray(db.pembelajaran)) {
+      const localPembelajaran = loadPembelajaran();
+      savePembelajaran(mergeArraysById(localPembelajaran, db.pembelajaran));
+    }
+    if (Array.isArray(db.pengumuman)) {
+      const localPengumuman = loadPengumuman();
+      savePengumuman(mergeArraysById(localPengumuman, db.pengumuman));
+    }
+    if (db.settings) {
+      const settingsObj = Array.isArray(db.settings) ? db.settings[0] : db.settings;
+      if (settingsObj && settingsObj.namaGuru) {
+        if (settingsObj.kkm) settingsObj.kkm = Number(settingsObj.kkm);
+        saveSettings({ ...DEFAULT_SETTINGS, ...settingsObj, spreadsheetUrl: url });
+      }
+    }
+    if (Array.isArray(db.rangkuman)) {
+      const localRangkuman = loadRangkuman();
+      saveRangkuman(mergeArraysById(localRangkuman, db.rangkuman));
+    }
+    return true;
+  }
+
+  return false;
 }
 
 export async function fetchFromGoogleSheets(sheetName: string): Promise<any[]> {
@@ -476,6 +512,16 @@ export const saveSettings = (settings: AppSettings) => {
   }
 };
 
+export const getTeacherSettings = (username: string): AppSettings | null => {
+  try {
+    const data = localStorage.getItem(`smasa_${username}_settings`);
+    if (data) {
+      return JSON.parse(data);
+    }
+  } catch (e) {}
+  return null;
+};
+
 export const getTeacherSchoolName = (username: string): string => {
   try {
     const data = localStorage.getItem(`smasa_${username}_settings`);
@@ -564,7 +610,7 @@ export function restoreLocalDatabaseFromJSON(jsonString: string): boolean {
 // SUPER ADMIN SPREADSHEET INTEGRATION FUNCTIONS
 // ----------------------------------------------------------------------------
 export function getSuperAdminSpreadsheetUrl(): string {
-  return localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';
+  return localStorage.getItem('smasa_superadmin_spreadsheet_url') || (import.meta as any).env?.VITE_SUPERADMIN_SPREADSHEET_URL || '';
 }
 
 export function saveSuperAdminSpreadsheetUrl(url: string) {
@@ -624,6 +670,24 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     teachers: loadTeacherAccounts(),
   };
 
+  // 1. Try server-side proxy first (bypasses browser CORS & iframe sandbox limitations)
+  try {
+    const proxyRes = await fetch('/api/superadmin/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(db),
+    });
+    if (proxyRes.ok) {
+      const result = await proxyRes.json().catch(() => ({ status: 'success' }));
+      if (result.status === 'success' || result.success || proxyRes.ok) {
+        return true;
+      }
+    }
+  } catch (proxyErr) {
+    console.warn("[Super Admin Sync] Server proxy push failed, falling back to direct fetch:", proxyErr);
+  }
+
+  // 2. Direct client fetch fallback
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -654,42 +718,92 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
   const url = await fetchSuperAdminSpreadsheetUrlFromServer();
   if (!url) return false;
 
+  let db: any = null;
+
+  // 1. First try fetching via server-side proxy (bypasses browser CORS & iframe redirect blocks)
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      mode: 'cors',
-    });
-    if (!response.ok) throw new Error("Gagal mengambil data guru dari Google Sheets Super Admin");
-    const db = await response.json();
-    
-    if (db && Array.isArray(db.teachers)) {
-      const localTeachers = loadTeacherAccounts();
-      const mergedTeachers = db.teachers.map((remoteT: any) => {
-        const localMatch = localTeachers.find(l => l.username === remoteT.username || l.id === remoteT.id);
-        return {
-          ...remoteT,
-          email: remoteT.email || localMatch?.email || '',
-          asalSekolah: remoteT.asalSekolah || localMatch?.asalSekolah || '',
-          spreadsheetUrl: remoteT.spreadsheetUrl || localMatch?.spreadsheetUrl || '',
-        };
-      });
-      
-      // Keep any local teachers (e.g., registered locally but not pushed yet, or added offline)
-      localTeachers.forEach(localT => {
-        const exists = db.teachers.some((t: any) => t.username === localT.username || t.id === localT.id);
-        if (!exists) {
-          mergedTeachers.push(localT);
-        }
-      });
-      
-      saveTeacherAccounts(mergedTeachers);
-      return true;
+    const proxyRes = await fetch('/api/superadmin/pull');
+    if (proxyRes.ok) {
+      db = await proxyRes.json();
     }
-    return false;
-  } catch (error) {
-    console.error("[Google Sheets Super Admin Sync Error] Gagal pull:", error);
-    throw error;
+  } catch (proxyErr) {
+    console.warn("[Super Admin Sync] Server proxy pull failed, falling back to direct fetch:", proxyErr);
   }
+
+  // 2. Fallback to direct client fetch if server proxy is unavailable or failed
+  if (!db) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+      });
+      if (response.ok) {
+        db = await response.json();
+      }
+    } catch (directErr) {
+      console.error("[Super Admin Sync] Direct pull failed:", directErr);
+    }
+  }
+
+  // Flexibly parse response payload
+  let remoteTeachers: any[] = [];
+  let isDbFound = false;
+
+  if (db) {
+    if (Array.isArray(db)) {
+      remoteTeachers = db;
+      isDbFound = true;
+    } else if (Array.isArray(db.teachers)) {
+      remoteTeachers = db.teachers;
+      isDbFound = true;
+    } else if (Array.isArray(db.data)) {
+      remoteTeachers = db.data;
+      isDbFound = true;
+    } else if (Array.isArray(db.Guru)) {
+      remoteTeachers = db.Guru;
+      isDbFound = true;
+    } else if (Array.isArray(db.guru)) {
+      remoteTeachers = db.guru;
+      isDbFound = true;
+    }
+  }
+
+  if (isDbFound) {
+    const localTeachers = loadTeacherAccounts();
+    const mergedTeachers: TeacherAccount[] = remoteTeachers.map((remoteT: any, idx: number): TeacherAccount => {
+      const uName = String(remoteT.username || remoteT.Username || '').trim();
+      const tId = String(remoteT.id || remoteT.ID || `T${idx + 1}`);
+      const localMatch = localTeachers.find(l => (uName && l.username.toLowerCase() === uName.toLowerCase()) || l.id === tId);
+
+      const appVal = String(remoteT.isApproved !== undefined ? remoteT.isApproved : (remoteT.isapproved !== undefined ? remoteT.isapproved : 'true')).toLowerCase();
+      const isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes');
+
+      return {
+        id: tId,
+        nama: String(remoteT.nama || remoteT.Nama || remoteT.name || localMatch?.nama || ''),
+        username: uName || localMatch?.username || '',
+        password: String(remoteT.password || remoteT.Password || localMatch?.password || ''),
+        mataPelajaran: String(remoteT.mataPelajaran || remoteT.matapelajaran || remoteT.MataPelajaran || localMatch?.mataPelajaran || 'Informatika'),
+        isApproved: isApp,
+        asalSekolah: String(remoteT.asalSekolah || remoteT.asalsekolah || remoteT.AsalSekolah || localMatch?.asalSekolah || ''),
+        spreadsheetUrl: String(remoteT.spreadsheetUrl || remoteT.spreadsheeturl || remoteT.SpreadsheetUrl || localMatch?.spreadsheetUrl || ''),
+        email: String(remoteT.email || remoteT.Email || localMatch?.email || '')
+      };
+    }).filter((t: TeacherAccount) => t.username);
+
+    // Keep any local teachers not in remote list
+    localTeachers.forEach(localT => {
+      const exists = mergedTeachers.some((t: any) => t.username.toLowerCase() === localT.username.toLowerCase() || t.id === localT.id);
+      if (!exists) {
+        mergedTeachers.push(localT);
+      }
+    });
+
+    saveTeacherAccounts(mergedTeachers);
+    return true;
+  }
+
+  return false;
 }
 
 export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promise<boolean> {
@@ -698,7 +812,7 @@ export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promis
   if (!url) {
     // Jika tidak ada URL spreadsheet di server/lokal, simpan lokal saja sebagai fallback
     const teachers = loadTeacherAccounts();
-    if (teachers.some(t => t.username === newTeacher.username)) {
+    if (teachers.some(t => t.username.toLowerCase() === newTeacher.username.toLowerCase())) {
       throw new Error(`Username "${newTeacher.username}" sudah terdaftar.`);
     }
     const updated = [...teachers, newTeacher];
@@ -707,36 +821,13 @@ export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promis
   }
 
   try {
-    // 2. Tarik data guru terbaru dari Google Spreadsheet terlebih dahulu agar tidak menimpa data yang ada
-    const response = await fetch(url, {
-      method: 'GET',
-      mode: 'cors',
-    });
-    if (!response.ok) throw new Error("Gagal menyinkronkan data pendaftaran dengan database pusat");
+    // 2. Tarik data guru terbaru dari Google Spreadsheet terlebih dahulu
+    await pullSuperAdminFromGoogleSheets().catch(() => {});
     
-    const db = await response.json();
     let currentTeachers = loadTeacherAccounts();
-    if (db && Array.isArray(db.teachers)) {
-      const mergedTeachers = db.teachers.map((remoteT: any) => {
-        const localMatch = currentTeachers.find(l => l.username === remoteT.username || l.id === remoteT.id);
-        return {
-          ...remoteT,
-          email: remoteT.email || localMatch?.email || '',
-          asalSekolah: remoteT.asalSekolah || localMatch?.asalSekolah || '',
-          spreadsheetUrl: remoteT.spreadsheetUrl || localMatch?.spreadsheetUrl || '',
-        };
-      });
-      currentTeachers.forEach(localT => {
-        const exists = db.teachers.some((t: any) => t.username === localT.username || t.id === localT.id);
-        if (!exists) {
-          mergedTeachers.push(localT);
-        }
-      });
-      currentTeachers = mergedTeachers;
-    }
 
-    // 3. Validasi username unik pada data terbaru dari spreadsheet
-    if (currentTeachers.some(t => t.username === newTeacher.username)) {
+    // 3. Validasi username unik pada data terbaru
+    if (currentTeachers.some(t => t.username.toLowerCase() === newTeacher.username.toLowerCase())) {
       throw new Error(`Username "${newTeacher.username}" sudah terdaftar di sistem.`);
     }
 
@@ -746,15 +837,8 @@ export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promis
     // 5. Simpan ke local storage
     saveTeacherAccounts(updated);
 
-    // 6. Dorong kembali daftar lengkap ke Google Spreadsheet
-    const pushResponse = await fetch(url, {
-      method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ teachers: updated }),
-    });
-
-    if (!pushResponse.ok) throw new Error("Gagal mendaftarkan ke database Google Spreadsheet");
+    // 6. Dorong kembali daftar lengkap ke Google Spreadsheet (via proxy / direct)
+    await pushSuperAdminToGoogleSheets();
     return true;
   } catch (error: any) {
     console.error("[Register and Sync Error] Detail kegagalan:", error);

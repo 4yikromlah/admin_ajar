@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School, Mail, ArrowLeft, Lock } from 'lucide-react';
 import { Siswa, AppSettings, TeacherAccount } from '../types';
-import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchSuperAdminSpreadsheetUrlFromServer } from '../data';
+import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchSuperAdminSpreadsheetUrlFromServer, pullSuperAdminFromGoogleSheets, getTeacherSettings } from '../data';
 
 interface LoginProps {
   siswaList: Siswa[];
@@ -110,24 +110,13 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
   // Load teachers to populate school dropdown
   const [teachersList, setTeachersList] = useState<TeacherAccount[]>(() => loadTeacherAccounts());
 
-  // Auto-sync on mount to pull latest teachers from centralized spreadsheet
+  // Auto-sync on mount to pull latest teachers from centralized spreadsheet database
   React.useEffect(() => {
     const syncTeachers = async () => {
       try {
-        const url = await fetchSuperAdminSpreadsheetUrlFromServer();
-        if (url) {
-          const response = await fetch(url, {
-            method: 'GET',
-            mode: 'cors',
-          });
-          if (response.ok) {
-            const db = await response.json();
-            if (db && Array.isArray(db.teachers)) {
-              saveTeacherAccounts(db.teachers);
-              setTeachersList(db.teachers);
-            }
-          }
-        }
+        await pullSuperAdminFromGoogleSheets();
+        const updated = loadTeacherAccounts();
+        setTeachersList(updated);
       } catch (err) {
         console.warn("[Login Sync Teachers Error] Gagal menyelaraskan daftar guru otomatis:", err);
       }
@@ -144,45 +133,52 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     return uniqueSchools.includes("MGMP INFORMATIKA SMA BONDOWOSO") ? "MGMP INFORMATIKA SMA BONDOWOSO" : (uniqueSchools[0] || "MGMP INFORMATIKA SMA BONDOWOSO");
   });
 
-  const handleGuruSubmit = (e: React.FormEvent) => {
+  const handleGuruSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGuruError('');
     setIsGuruLoading(true);
 
     const cleanUsername = guruUsername.trim().toLowerCase();
 
-    setTimeout(() => {
-      // 1. Check Super Admin Credentials
-      const allowedAdminPassword = localStorage.getItem('smasa_superadmin_password') || 'sableng212';
-      if (cleanUsername === 'admin' && guruPassword === allowedAdminPassword) {
-        localStorage.setItem('hasEverLoggedIn', 'true');
-        
-        const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-        localStorage.setItem('lastLoggedInSchoolName', 'Super Admin');
-        localStorage.setItem('lastLoggedInSchoolLogo', '');
-        localStorage.setItem('lastLoggedInMataPelajaran', 'All Subjects');
-        localStorage.setItem('lastLoggedInTime', loginTime);
-        localStorage.setItem('lastLoggedInUserNama', 'Super Admin');
-        localStorage.setItem('lastLoggedInRole', 'superadmin');
+    // Pull latest teachers from central cloud database before verifying login
+    let latestTeachers = teachersList;
+    try {
+      await pullSuperAdminFromGoogleSheets();
+      latestTeachers = loadTeacherAccounts();
+      setTeachersList(latestTeachers);
+    } catch (err) {}
 
-        setLoginSuccessData({
-          role: 'superadmin',
-          nama: 'Super Admin',
-          sekolah: 'Dashboard Super Admin',
-          logo: '',
-          mataPelajaran: 'Sistem Pusat'
-        });
+    // 1. Check Super Admin Credentials
+    const allowedAdminPassword = localStorage.getItem('smasa_superadmin_password') || 'sableng212';
+    if (cleanUsername === 'admin' && guruPassword === allowedAdminPassword) {
+      localStorage.setItem('hasEverLoggedIn', 'true');
+      
+      const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      localStorage.setItem('lastLoggedInSchoolName', 'Super Admin');
+      localStorage.setItem('lastLoggedInSchoolLogo', '');
+      localStorage.setItem('lastLoggedInMataPelajaran', 'All Subjects');
+      localStorage.setItem('lastLoggedInTime', loginTime);
+      localStorage.setItem('lastLoggedInUserNama', 'Super Admin');
+      localStorage.setItem('lastLoggedInRole', 'superadmin');
 
-        setTimeout(() => {
-          onSuperAdminLoginSuccess();
-        }, 2200);
-        return;
-      }
+      setLoginSuccessData({
+        role: 'superadmin',
+        nama: 'Super Admin',
+        sekolah: 'Dashboard Super Admin',
+        logo: '',
+        mataPelajaran: 'Sistem Pusat'
+      });
 
-      // 2. Check Teacher Accounts
-      const matchedTeacher = teachersList.find(
-        (t) => t.username === cleanUsername && t.password === guruPassword
-      );
+      setTimeout(() => {
+        onSuperAdminLoginSuccess();
+      }, 2200);
+      return;
+    }
+
+    // 2. Check Teacher Accounts
+    const matchedTeacher = latestTeachers.find(
+      (t) => t.username.toLowerCase() === cleanUsername && t.password === guruPassword
+    );
 
       if (matchedTeacher) {
         if (matchedTeacher.isApproved === false) {
@@ -286,7 +282,6 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
       setGuruError('Username atau Password Guru salah!');
       setIsGuruLoading(false);
-    }, 600);
   };
 
   const handleRegSubmit = async (e: React.FormEvent) => {
@@ -595,7 +590,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     }
   };
 
-  const handleSiswaSubmit = (e: React.FormEvent) => {
+  const handleSiswaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSiswaError('');
     setIsSiswaLoading(true);
@@ -603,120 +598,133 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     const cleanUsername = siswaUsername.trim().toLowerCase();
     const cleanPassword = siswaPassword.trim();
 
-    setTimeout(() => {
-      // Find teachers belonging to selected school
-      const teachers = loadTeacherAccounts();
-      const matchedTeachers = teachers.filter(
-        (t) => (t.asalSekolah || '').trim().toLowerCase() === selectedSchool.trim().toLowerCase()
-      );
+    // 1. Refresh teacher accounts from cloud database
+    try {
+      await pullSuperAdminFromGoogleSheets();
+    } catch (e) {}
 
-      let found: Siswa | null = null;
-      let matchedTeacherUsername = '';
+    const teachers = loadTeacherAccounts();
+    const matchedTeachers = teachers.filter(
+      (t) => (t.asalSekolah || '').trim().toLowerCase() === selectedSchool.trim().toLowerCase()
+    );
 
-      // 1. Search among students of teachers of the selected school
-      for (const teacher of matchedTeachers) {
+    let found: Siswa | null = null;
+    let matchedTeacherUsername = '';
+
+    const checkStudentInList = (list: Siswa[]) => {
+      return list.find((s) => {
+        const studentUsername = (s.username || '').trim().toLowerCase();
+        const studentNis = (s.nis || '').trim().toLowerCase();
+        const studentPassword = (s.password || 'smasa123').trim();
+        return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
+               studentPassword === cleanPassword;
+      });
+    };
+
+    // 2. Search among students of teachers of the selected school locally
+    for (const teacher of matchedTeachers) {
+      const scopedKey = `smasa_${teacher.username}_siswa`;
+      const teacherStudentsString = localStorage.getItem(scopedKey);
+      const teacherStudents: Siswa[] = teacherStudentsString ? JSON.parse(teacherStudentsString) : [...siswaList];
+      const match = checkStudentInList(teacherStudents);
+      if (match) {
+        found = match;
+        matchedTeacherUsername = teacher.username;
+        break;
+      }
+    }
+
+    // 3. Search across ALL registered teachers locally
+    if (!found) {
+      for (const teacher of teachers) {
         const scopedKey = `smasa_${teacher.username}_siswa`;
         const teacherStudentsString = localStorage.getItem(scopedKey);
-        const teacherStudents: Siswa[] = teacherStudentsString
-          ? JSON.parse(teacherStudentsString)
-          : [...siswaList];
-
-        const match = teacherStudents.find((s) => {
-          const studentUsername = (s.username || '').trim().toLowerCase();
-          const studentNis = (s.nis || '').trim().toLowerCase();
-          const studentPassword = (s.password || 'smasa123').trim();
-          
-          return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
-                 studentPassword === cleanPassword;
-        });
-
+        const teacherStudents: Siswa[] = teacherStudentsString ? JSON.parse(teacherStudentsString) : [...siswaList];
+        const match = checkStudentInList(teacherStudents);
         if (match) {
           found = match;
           matchedTeacherUsername = teacher.username;
           break;
         }
       }
+    }
 
-      // 2. If not found, search across ALL registered teachers
-      if (!found) {
-        for (const teacher of teachers) {
-          const scopedKey = `smasa_${teacher.username}_siswa`;
-          const teacherStudentsString = localStorage.getItem(scopedKey);
-          const teacherStudents: Siswa[] = teacherStudentsString
-            ? JSON.parse(teacherStudentsString)
-            : [...siswaList];
+    // 4. Search in default/prop list
+    if (!found) {
+      const match = checkStudentInList(siswaList);
+      if (match) {
+        found = match;
+        matchedTeacherUsername = '';
+      }
+    }
 
-          const match = teacherStudents.find((s) => {
-            const studentUsername = (s.username || '').trim().toLowerCase();
-            const studentNis = (s.nis || '').trim().toLowerCase();
-            const studentPassword = (s.password || 'smasa123').trim();
-            
-            return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
-                   studentPassword === cleanPassword;
-          });
-
-          if (match) {
-            found = match;
-            matchedTeacherUsername = teacher.username;
-            break;
+    // 5. If still not found, pull student database from teacher's Google Spreadsheet!
+    if (!found) {
+      for (const teacher of teachers) {
+        if (teacher.spreadsheetUrl) {
+          try {
+            const res = await fetch('/api/gas-proxy', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: teacher.spreadsheetUrl, method: 'GET' })
+            });
+            if (res.ok) {
+              const db = await res.json();
+              if (db && Array.isArray(db.siswa)) {
+                const scopedKey = `smasa_${teacher.username}_siswa`;
+                localStorage.setItem(scopedKey, JSON.stringify(db.siswa));
+                const match = checkStudentInList(db.siswa);
+                if (match) {
+                  found = match;
+                  matchedTeacherUsername = teacher.username;
+                  break;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn(`[Siswa Sync] Gagal mengunduh data siswa untuk guru ${teacher.username}:`, err);
           }
         }
       }
+    }
 
-      // 3. Fallback to default/general list
-      if (!found) {
-        const match = siswaList.find((s) => {
-          const studentUsername = (s.username || '').trim().toLowerCase();
-          const studentNis = (s.nis || '').trim().toLowerCase();
-          const studentPassword = (s.password || 'smasa123').trim();
-          
-          return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
-                 studentPassword === cleanPassword;
-        });
-        if (match) {
-          found = match;
-          matchedTeacherUsername = '';
-        }
+    if (found) {
+      localStorage.setItem('hasEverLoggedIn', 'true');
+
+      let tSettings: AppSettings | null = null;
+      if (matchedTeacherUsername) {
+        tSettings = getTeacherSettings(matchedTeacherUsername);
       }
 
-      if (found) {
-        localStorage.setItem('hasEverLoggedIn', 'true');
+      const sName = tSettings?.kopSekolah || selectedSchool || 'MGMP INFORMATIKA BONDOWOSO';
+      const sLogo = tSettings?.logoSekolah || '';
+      const sMataPelajaran = tSettings?.mataPelajaran || 'Informatika';
+      const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 
-        let tSettings: AppSettings | null = null;
-        if (matchedTeacherUsername) {
-          tSettings = getTeacherSettings(matchedTeacherUsername);
-        }
+      localStorage.setItem('lastLoggedInSchoolName', sName);
+      localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
+      localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
+      localStorage.setItem('lastLoggedInTime', loginTime);
+      localStorage.setItem('lastLoggedInUserNama', found.nama);
+      localStorage.setItem('lastLoggedInRole', 'siswa');
 
-        const sName = tSettings?.kopSekolah || selectedSchool || 'MGMP INFORMATIKA BONDOWOSO';
-        const sLogo = tSettings?.logoSekolah || '';
-        const sMataPelajaran = tSettings?.mataPelajaran || 'Informatika';
-        const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      setLoginSuccessData({
+        role: 'siswa',
+        nama: found.nama,
+        sekolah: sName,
+        logo: sLogo,
+        mataPelajaran: sMataPelajaran
+      });
 
-        localStorage.setItem('lastLoggedInSchoolName', sName);
-        localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
-        localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
-        localStorage.setItem('lastLoggedInTime', loginTime);
-        localStorage.setItem('lastLoggedInUserNama', found.nama);
-        localStorage.setItem('lastLoggedInRole', 'siswa');
-
-        setLoginSuccessData({
-          role: 'siswa',
-          nama: found.nama,
-          sekolah: sName,
-          logo: sLogo,
-          mataPelajaran: sMataPelajaran
-        });
-
-        const studentData = found;
-        const teacherUser = matchedTeacherUsername;
-        setTimeout(() => {
-          onStudentLoginSuccess(studentData, teacherUser);
-        }, 2200);
-      } else {
-        setSiswaError('NIS/Username atau Kata Sandi Siswa salah pada sekolah yang dipilih.');
-        setIsSiswaLoading(false);
-      }
-    }, 600);
+      const studentData = found;
+      const teacherUser = matchedTeacherUsername;
+      setTimeout(() => {
+        onStudentLoginSuccess(studentData, teacherUser);
+      }, 2200);
+    } else {
+      setSiswaError('NIS/Username atau Kata Sandi Siswa salah pada sekolah yang dipilih.');
+      setIsSiswaLoading(false);
+    }
   };
 
   // Retrieve last login details from localStorage for persistent branding even when logged out
