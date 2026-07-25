@@ -762,6 +762,14 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
                   placeholder="https://script.google.com/macros/s/.../exec"
                   id="input-settings-spreadsheet-url"
                 />
+                {spreadsheetUrl.includes('docs.google.com/spreadsheets') && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-semibold flex items-start gap-2">
+                    <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Perhatian:</strong> URL yang Anda masukkan adalah URL Google Spreadsheet. Untuk sinkronisasi otomatis, Anda harus memasukkan <strong>URL Web App Google Apps Script</strong> (yang didapat dari menu <em>Ekstensi &gt; Apps Script &gt; Terapkan sebagai Aplikasi Web</em>, berawalan <code>https://script.google.com/macros/s/.../exec</code>).
+                    </div>
+                  </div>
+                )}
                 <p className="text-[10px] text-slate-400 mt-1 leading-normal">
                   Masukkan URL Web App dari Apps Script Anda setelah dideploy. Biarkan kosong jika ingin menggunakan mode penyimpanan lokal offline-first.
                 </p>

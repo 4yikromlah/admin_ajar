@@ -58,8 +58,21 @@ app.get('/api/superadmin-url', (req, res) => {
 app.post('/api/gas-proxy', async (req, res) => {
   const { url, method, body } = req.body;
   if (!url || typeof url !== 'string') {
-    return res.status(400).json({ error: 'URL Google Apps Script wajib disediakan' });
+    return res.status(400).json({ status: 'error', error: 'URL Google Apps Script wajib disediakan' });
   }
+
+  let targetUrl = url.trim().replace(/^["']|["']$/g, '');
+  if (targetUrl.endsWith('/dev')) {
+    targetUrl = targetUrl.substring(0, targetUrl.length - 4) + '/exec';
+  }
+
+  if (targetUrl.includes('docs.google.com/spreadsheets')) {
+    return res.status(400).json({
+      status: 'error',
+      error: 'URL yang dimasukkan adalah URL Google Spreadsheet (docs.google.com/spreadsheets). Gunakan URL Web App Google Apps Script yang berakhiran /exec.'
+    });
+  }
+
   try {
     const fetchOptions: RequestInit = {
       method: method || 'GET',
@@ -68,50 +81,81 @@ app.post('/api/gas-proxy', async (req, res) => {
       fetchOptions.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
       fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
     }
-    const response = await fetch(url, fetchOptions);
+    const response = await fetch(targetUrl, fetchOptions);
     const text = await response.text();
     let data;
     try {
       data = JSON.parse(text);
+      if (data && (data.status === 'error' || data.error)) {
+        return res.status(400).json(data);
+      }
+      return res.json(data);
     } catch (e) {
-      data = { status: response.ok ? 'success' : 'error', raw: text };
+      const isHtml = text.trim().startsWith('<') || text.includes('<!DOCTYPE') || text.includes('google.com');
+      const errObj = {
+        status: 'error',
+        error: isHtml
+          ? 'Respon berupa halaman HTML/Login Google. Pastikan Web App Apps Script di-set "Akses: Siapa Saja" (Anyone) & gunakan URL Web App /exec.'
+          : 'Respon dari Google Apps Script bukan format JSON yang valid.',
+        raw: text.substring(0, 300)
+      };
+      return res.status(400).json(errObj);
     }
-    return res.json(data);
   } catch (err: any) {
     console.error('[GAS Proxy Error]', err);
-    return res.status(500).json({ error: err?.message || 'Gagal terhubung ke Google Apps Script' });
+    return res.status(500).json({ status: 'error', error: err?.message || 'Gagal terhubung ke Google Apps Script' });
   }
 });
 
 app.get('/api/superadmin/pull', async (req, res) => {
   if (!spreadsheetUrl) {
-    return res.status(400).json({ error: 'URL Spreadsheet Super Admin belum dikonfigurasi di server.' });
+    return res.status(400).json({ status: 'error', error: 'URL Spreadsheet Super Admin belum dikonfigurasi di server.' });
   }
+  let targetUrl = spreadsheetUrl.trim().replace(/^["']|["']$/g, '');
+  if (targetUrl.endsWith('/dev')) {
+    targetUrl = targetUrl.substring(0, targetUrl.length - 4) + '/exec';
+  }
+
   try {
-    const response = await fetch(spreadsheetUrl, { method: 'GET' });
+    const response = await fetch(targetUrl, { method: 'GET' });
     if (!response.ok) {
-      return res.status(500).json({ error: `Gagal terhubung ke Google Apps Script (${response.statusText})` });
+      return res.status(500).json({ status: 'error', error: `Gagal terhubung ke Google Apps Script (${response.statusText})` });
     }
     const text = await response.text();
     let data;
     try {
       data = JSON.parse(text);
+      if (data && (data.status === 'error' || data.error)) {
+        return res.status(400).json(data);
+      }
+      return res.json(data);
     } catch (e) {
-      return res.status(500).json({ error: 'Respon dari Google Apps Script bukan format JSON yang valid.', raw: text.substring(0, 200) });
+      const isHtml = text.trim().startsWith('<') || text.includes('<!DOCTYPE') || text.includes('google.com');
+      return res.status(400).json({
+        status: 'error',
+        error: isHtml
+          ? 'Respon berupa halaman HTML/Login. Pastikan Web App Apps Script di-set "Akses: Siapa Saja" (Anyone) & gunakan URL /exec.'
+          : 'Respon dari Google Apps Script bukan format JSON yang valid.',
+        raw: text.substring(0, 200)
+      });
     }
-    return res.json(data);
   } catch (err: any) {
     console.error('[Server SuperAdmin Pull Error]', err);
-    return res.status(500).json({ error: err?.message || 'Gagal terhubung ke Google Apps Script dari server' });
+    return res.status(500).json({ status: 'error', error: err?.message || 'Gagal terhubung ke Google Apps Script dari server' });
   }
 });
 
 app.post('/api/superadmin/push', async (req, res) => {
   if (!spreadsheetUrl) {
-    return res.status(400).json({ error: 'URL Spreadsheet Super Admin belum dikonfigurasi di server.' });
+    return res.status(400).json({ status: 'error', error: 'URL Spreadsheet Super Admin belum dikonfigurasi di server.' });
   }
+  let targetUrl = spreadsheetUrl.trim().replace(/^["']|["']$/g, '');
+  if (targetUrl.endsWith('/dev')) {
+    targetUrl = targetUrl.substring(0, targetUrl.length - 4) + '/exec';
+  }
+
   try {
-    const response = await fetch(spreadsheetUrl, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(req.body),
@@ -120,13 +164,17 @@ app.post('/api/superadmin/push', async (req, res) => {
     let data;
     try {
       data = JSON.parse(text);
+      if (data && (data.status === 'error' || data.error)) {
+        return res.status(400).json(data);
+      }
+      return res.json(data);
     } catch (e) {
       data = { status: response.ok ? 'success' : 'error' };
+      return response.ok ? res.json(data) : res.status(400).json(data);
     }
-    return res.json(data);
   } catch (err: any) {
     console.error('[Server SuperAdmin Push Error]', err);
-    return res.status(500).json({ error: err?.message || 'Gagal terhubung ke Google Apps Script dari server' });
+    return res.status(500).json({ status: 'error', error: err?.message || 'Gagal terhubung ke Google Apps Script dari server' });
   }
 });
 
@@ -134,7 +182,11 @@ app.post('/api/superadmin-url', (req, res) => {
   const { url, adminPassword: newPassword, adminEmail: newEmail } = req.body;
   
   if (url !== undefined) {
-    spreadsheetUrl = url.trim();
+    let cleaned = url.trim().replace(/^["']|["']$/g, '');
+    if (cleaned.endsWith('/dev')) {
+      cleaned = cleaned.substring(0, cleaned.length - 4) + '/exec';
+    }
+    spreadsheetUrl = cleaned;
   }
   if (newPassword !== undefined) {
     adminPassword = newPassword.trim();

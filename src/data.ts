@@ -93,6 +93,15 @@ export function getActiveTeacherUsername(): string {
   return localStorage.getItem('loggedTeacherUsername') || '';
 }
 
+export function cleanGoogleAppsScriptUrl(url: string): string {
+  if (!url) return '';
+  let cleaned = url.trim().replace(/^["']|["']$/g, '');
+  if (cleaned.endsWith('/dev')) {
+    cleaned = cleaned.substring(0, cleaned.length - 4) + '/exec';
+  }
+  return cleaned;
+}
+
 export function getGoogleAppsScriptUrl(): string {
   try {
     const username = getActiveTeacherUsername();
@@ -100,18 +109,35 @@ export function getGoogleAppsScriptUrl(): string {
     const settingsStr = localStorage.getItem(`${prefix}settings`);
     if (settingsStr) {
       const parsed = JSON.parse(settingsStr);
-      if (parsed.spreadsheetUrl) return parsed.spreadsheetUrl;
+      if (parsed.spreadsheetUrl) return cleanGoogleAppsScriptUrl(parsed.spreadsheetUrl);
     }
     // Fallback to central teacher list spreadsheetUrl
     if (username) {
       const teachers = loadTeacherAccounts();
       const me = teachers.find(t => t.username.toLowerCase() === username.toLowerCase());
       if (me && me.spreadsheetUrl) {
-        return me.spreadsheetUrl;
+        return cleanGoogleAppsScriptUrl(me.spreadsheetUrl);
       }
     }
   } catch (e) {}
   return "";
+}
+
+let autoSyncTimer: any = null;
+
+export function triggerAutoSyncToSheets() {
+  const url = getGoogleAppsScriptUrl();
+  if (!url) return;
+
+  if (autoSyncTimer) clearTimeout(autoSyncTimer);
+  autoSyncTimer = setTimeout(async () => {
+    try {
+      console.log('[Auto Sync] Pushing changes to Google Sheets in background...');
+      await pushToGoogleSheets();
+    } catch (e) {
+      console.warn('[Auto Sync Error]', e);
+    }
+  }, 1000);
 }
 
 export interface FullDatabase {
@@ -125,8 +151,14 @@ export interface FullDatabase {
 }
 
 export async function pushToGoogleSheets(): Promise<boolean> {
-  const url = getGoogleAppsScriptUrl();
+  let url = getGoogleAppsScriptUrl();
   if (!url) return false;
+  url = cleanGoogleAppsScriptUrl(url);
+
+  if (url.includes('docs.google.com/spreadsheets')) {
+    console.warn('[GAS Sync] URL yang dimasukkan adalah URL Google Spreadsheet, bukan URL Web App Apps Script!');
+    return false;
+  }
 
   const siswa = loadSiswa();
   const nilai = loadNilai();
@@ -138,19 +170,12 @@ export async function pushToGoogleSheets(): Promise<boolean> {
 
   const db = {
     siswa,
-    Siswa: siswa,
     nilai,
-    Nilai: nilai,
     presensi,
-    Presensi: presensi,
     pembelajaran,
-    Pembelajaran: pembelajaran,
     pengumuman,
-    Pengumuman: pengumuman,
     settings,
-    Settings: settings,
     rangkuman,
-    Rangkuman: rangkuman,
   };
 
   // 1. Try server proxy first to avoid CORS / iframe redirect issues on mobile/different gadgets
@@ -161,9 +186,12 @@ export async function pushToGoogleSheets(): Promise<boolean> {
       body: JSON.stringify({ url, method: 'POST', body: db }),
     });
     if (proxyRes.ok) {
-      const resData = await proxyRes.json().catch(() => ({ status: 'success' }));
-      if (resData.status === 'success' || proxyRes.ok) {
+      const resData = await proxyRes.json().catch(() => null);
+      if (resData && (resData.status === 'success' || resData.result === 'success')) {
         return true;
+      }
+      if (resData && (resData.error || resData.status === 'error')) {
+        console.warn('[GAS Proxy Push Warning]', resData.error || resData.message || resData.raw);
       }
     }
   } catch (e) {
@@ -178,12 +206,12 @@ export async function pushToGoogleSheets(): Promise<boolean> {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(db),
     });
-    if (!response.ok) throw new Error("Gagal mengunggah data ke Google Sheets");
+    if (!response.ok) return false;
     
     let isSuccess = false;
     try {
       const result = await response.json();
-      isSuccess = result.status === "success";
+      isSuccess = result.status === "success" || result.result === "success";
     } catch (e) {
       if (response.ok) {
         isSuccess = true;
@@ -192,7 +220,7 @@ export async function pushToGoogleSheets(): Promise<boolean> {
     return isSuccess;
   } catch (error) {
     console.error("[Google Sheets Sync Error] Gagal push:", error);
-    throw error;
+    return false;
   }
 }
 
@@ -210,8 +238,14 @@ function getCaseInsensitiveProp(obj: any, targetKeys: string[]): any {
 }
 
 export async function pullFromGoogleSheets(): Promise<boolean> {
-  const url = getGoogleAppsScriptUrl();
+  let url = getGoogleAppsScriptUrl();
   if (!url) return false;
+  url = cleanGoogleAppsScriptUrl(url);
+
+  if (url.includes('docs.google.com/spreadsheets')) {
+    console.warn('[GAS Sync] URL yang dimasukkan adalah URL Google Spreadsheet, bukan URL Web App Apps Script!');
+    return false;
+  }
 
   let db: any = null;
 
@@ -223,7 +257,12 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
       body: JSON.stringify({ url, method: 'GET' }),
     });
     if (proxyRes.ok) {
-      db = await proxyRes.json();
+      const json = await proxyRes.json().catch(() => null);
+      if (json && !json.error && json.status !== 'error') {
+        db = json;
+      } else if (json && json.error) {
+        console.warn('[GAS Proxy Pull Warning]', json.error);
+      }
     }
   } catch (e) {
     console.warn('[GAS Proxy Pull Warning] Proxy failed, falling back to direct fetch:', e);
@@ -255,29 +294,29 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
 
     // Directly update local storage with Google Sheets data to ensure 100% exact parity
     if (Array.isArray(remoteSiswa)) {
-      saveSiswa(remoteSiswa);
+      saveSiswa(remoteSiswa, true);
     }
     if (Array.isArray(remoteNilai)) {
-      saveNilai(remoteNilai);
+      saveNilai(remoteNilai, true);
     }
     if (Array.isArray(remotePresensi)) {
-      savePresensi(remotePresensi);
+      savePresensi(remotePresensi, true);
     }
     if (Array.isArray(remotePembelajaran)) {
-      savePembelajaran(remotePembelajaran);
+      savePembelajaran(remotePembelajaran, true);
     }
     if (Array.isArray(remotePengumuman)) {
-      savePengumuman(remotePengumuman);
+      savePengumuman(remotePengumuman, true);
     }
     if (Array.isArray(remoteRangkuman)) {
-      saveRangkuman(remoteRangkuman);
+      saveRangkuman(remoteRangkuman, true);
     }
     if (remoteSettings) {
       const settingsObj = Array.isArray(remoteSettings) ? remoteSettings[0] : remoteSettings;
       if (settingsObj && typeof settingsObj === 'object') {
         if (settingsObj.kkm) settingsObj.kkm = Number(settingsObj.kkm);
         const currentSettings = loadSettings();
-        saveSettings({ ...DEFAULT_SETTINGS, ...currentSettings, ...settingsObj, spreadsheetUrl: url });
+        saveSettings({ ...DEFAULT_SETTINGS, ...currentSettings, ...settingsObj, spreadsheetUrl: url }, true);
       }
     }
     return true;
@@ -359,8 +398,13 @@ export const loadTeacherAccounts = (): TeacherAccount[] => {
   return getLocalStorageData<TeacherAccount>('smasa_teachers', SEED_TEACHERS);
 };
 
-export const saveTeacherAccounts = (data: TeacherAccount[]) => {
+export const saveTeacherAccounts = (data: TeacherAccount[], skipPush = false) => {
   saveLocalStorageData<TeacherAccount>('smasa_teachers', data);
+  if (!skipPush) {
+    pushSuperAdminToGoogleSheets().catch(e => {
+      console.warn("Gagal auto push data guru ke spreadsheet pusat:", e);
+    });
+  }
 };
 
 // Helper to prefix keys for active teacher
@@ -373,40 +417,45 @@ function getScopedKey(key: string): string {
 // HOOKS OPERASI SISWA
 // ----------------------------------------------------------------------------
 export const loadSiswa = (): Siswa[] => getLocalStorageData<Siswa>(getScopedKey('siswa'), SEED_SISWA);
-export const saveSiswa = (data: Siswa[]) => {
+export const saveSiswa = (data: Siswa[], skipAutoSync = false) => {
   saveLocalStorageData<Siswa>(getScopedKey('siswa'), data);
+  if (!skipAutoSync) triggerAutoSyncToSheets();
 };
 
 // ----------------------------------------------------------------------------
 // HOOKS OPERASI NILAI
 // ----------------------------------------------------------------------------
 export const loadNilai = (): Nilai[] => getLocalStorageData<Nilai>(getScopedKey('nilai'), SEED_NILAI);
-export const saveNilai = (data: Nilai[]) => {
+export const saveNilai = (data: Nilai[], skipAutoSync = false) => {
   saveLocalStorageData<Nilai>(getScopedKey('nilai'), data);
+  if (!skipAutoSync) triggerAutoSyncToSheets();
 };
 
 // ----------------------------------------------------------------------------
 // HOOKS OPERASI PRESENSI
 // ----------------------------------------------------------------------------
 export const loadPresensi = (): Presensi[] => getLocalStorageData<Presensi>(getScopedKey('presensi'), SEED_PRESENSI);
-export const savePresensi = (data: Presensi[]) => {
+export const savePresensi = (data: Presensi[], skipAutoSync = false) => {
   saveLocalStorageData<Presensi>(getScopedKey('presensi'), data);
+  if (!skipAutoSync) triggerAutoSyncToSheets();
 };
 
 // ----------------------------------------------------------------------------
 // HOOKS OPERASI PEMBELAJARAN
 // ----------------------------------------------------------------------------
 export const loadPembelajaran = (): Pembelajaran[] => getLocalStorageData<Pembelajaran>(getScopedKey('pembelajaran'), SEED_PEMBELAJARAN);
-export const savePembelajaran = (data: Pembelajaran[]) => {
+export const savePembelajaran = (data: Pembelajaran[], skipAutoSync = false) => {
   saveLocalStorageData<Pembelajaran>(getScopedKey('pembelajaran'), data);
+  if (!skipAutoSync) triggerAutoSyncToSheets();
 };
 
 // ----------------------------------------------------------------------------
 // HOOKS OPERASI PENGUMUMAN
 // ----------------------------------------------------------------------------
 export const loadPengumuman = (): Pengumuman[] => getLocalStorageData<Pengumuman>(getScopedKey('pengumuman'), SEED_PENGUMUMAN);
-export const savePengumuman = (data: Pengumuman[]) => {
+export const savePengumuman = (data: Pengumuman[], skipAutoSync = false) => {
   saveLocalStorageData<Pengumuman>(getScopedKey('pengumuman'), data);
+  if (!skipAutoSync) triggerAutoSyncToSheets();
 };
 
 // ----------------------------------------------------------------------------
@@ -498,7 +547,7 @@ export const loadSettings = (): AppSettings => {
   }
 };
 
-export const saveSettings = (settings: AppSettings) => {
+export const saveSettings = (settings: AppSettings, skipAutoSync = false) => {
   const scopedKey = getScopedKey('settings');
   try {
     localStorage.setItem(scopedKey, JSON.stringify(settings));
@@ -521,11 +570,10 @@ export const saveSettings = (settings: AppSettings) => {
         return t;
       });
       saveTeacherAccounts(updated);
+    }
 
-      // Auto-push updated teacher list to central spreadsheet asynchronously!
-      pushSuperAdminToGoogleSheets().catch(e => {
-        console.warn("Gagal sinkronisasi data guru ke spreadsheet pusat:", e);
-      });
+    if (!skipAutoSync) {
+      triggerAutoSyncToSheets();
     }
   } catch (e) {
     console.error(`Gagal menyimpan ke localStorage [${scopedKey}]:`, e);
@@ -562,8 +610,11 @@ export const getTeacherSchoolName = (username: string): string => {
 };
 
 export const loadRangkuman = (): Rangkuman[] => getLocalStorageData<Rangkuman>(getScopedKey('rangkuman'), []);
-export const saveRangkuman = (data: Rangkuman[]) => {
+export const saveRangkuman = (data: Rangkuman[], skipAutoSync = false) => {
   saveLocalStorageData<Rangkuman>(getScopedKey('rangkuman'), data);
+  if (!skipAutoSync) {
+    triggerAutoSyncToSheets();
+  }
 };
 
 // ----------------------------------------------------------------------------
@@ -634,7 +685,9 @@ export function getSuperAdminSpreadsheetUrl(): string {
 }
 
 export function saveSuperAdminSpreadsheetUrl(url: string) {
-  localStorage.setItem('smasa_superadmin_spreadsheet_url', url.trim());
+  const cleaned = cleanGoogleAppsScriptUrl(url);
+  localStorage.setItem('smasa_superadmin_spreadsheet_url', cleaned);
+  saveSuperAdminSpreadsheetUrlToServer(cleaned).catch(() => {});
 }
 
 export async function fetchSuperAdminConfigFromServer(): Promise<{ url: string; adminPassword?: string; adminEmail?: string } | null> {
@@ -643,7 +696,7 @@ export async function fetchSuperAdminConfigFromServer(): Promise<{ url: string; 
     if (response.ok) {
       const data = await response.json();
       if (data) {
-        if (data.url) localStorage.setItem('smasa_superadmin_spreadsheet_url', data.url);
+        if (data.url) localStorage.setItem('smasa_superadmin_spreadsheet_url', cleanGoogleAppsScriptUrl(data.url));
         if (data.adminPassword) localStorage.setItem('smasa_superadmin_password', data.adminPassword);
         if (data.adminEmail) localStorage.setItem('smasa_superadmin_email', data.adminEmail);
         return data;
@@ -657,11 +710,12 @@ export async function fetchSuperAdminConfigFromServer(): Promise<{ url: string; 
 
 export async function fetchSuperAdminSpreadsheetUrlFromServer(): Promise<string> {
   const config = await fetchSuperAdminConfigFromServer();
-  return config?.url || localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';
+  return cleanGoogleAppsScriptUrl(config?.url || localStorage.getItem('smasa_superadmin_spreadsheet_url') || '');
 }
 
 export async function saveSuperAdminSpreadsheetUrlToServer(url: string, adminPassword?: string, adminEmail?: string): Promise<boolean> {
-  localStorage.setItem('smasa_superadmin_spreadsheet_url', url.trim());
+  const cleaned = cleanGoogleAppsScriptUrl(url);
+  localStorage.setItem('smasa_superadmin_spreadsheet_url', cleaned);
   if (adminPassword) localStorage.setItem('smasa_superadmin_password', adminPassword.trim());
   if (adminEmail) localStorage.setItem('smasa_superadmin_email', adminEmail.trim());
   
@@ -670,7 +724,7 @@ export async function saveSuperAdminSpreadsheetUrlToServer(url: string, adminPas
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        url: url.trim(),
+        url: cleaned,
         adminPassword: adminPassword?.trim(),
         adminEmail: adminEmail?.trim()
       }),
@@ -683,11 +737,24 @@ export async function saveSuperAdminSpreadsheetUrlToServer(url: string, adminPas
 }
 
 export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
-  const url = await fetchSuperAdminSpreadsheetUrlFromServer();
+  let url = await fetchSuperAdminSpreadsheetUrlFromServer();
   if (!url) return false;
+  url = cleanGoogleAppsScriptUrl(url);
+
+  if (url.includes('docs.google.com/spreadsheets')) {
+    console.warn('[Super Admin Sync] URL yang dimasukkan adalah URL Google Spreadsheet, bukan Web App Apps Script!');
+    return false;
+  }
+
+  const teachers = loadTeacherAccounts();
 
   const db = {
-    teachers: loadTeacherAccounts(),
+    action: 'saveTeachers',
+    teachers: teachers,
+    Teachers: teachers,
+    guru: teachers,
+    Guru: teachers,
+    data: teachers,
   };
 
   // 1. Try server-side gas-proxy first (uses exact URL & bypasses browser CORS/iframe restrictions)
@@ -698,9 +765,12 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
       body: JSON.stringify({ url, method: 'POST', body: db }),
     });
     if (proxyRes.ok) {
-      const result = await proxyRes.json().catch(() => ({ status: 'success' }));
-      if (result.status === 'success' || result.success || proxyRes.ok) {
+      const result = await proxyRes.json().catch(() => null);
+      if (result && !result.error && (result.status === 'success' || result.result === 'success' || result.success === true || result.status === 'ok')) {
         return true;
+      }
+      if (result && (result.error || result.status === 'error')) {
+        console.warn("[Super Admin Sync] Server gas-proxy error:", result.error || result.raw);
       }
     }
   } catch (proxyErr) {
@@ -715,12 +785,12 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(db),
     });
-    if (!response.ok) throw new Error("Gagal mengunggah data guru ke Google Sheets Super Admin");
+    if (!response.ok) return false;
     
     let isSuccess = false;
     try {
       const result = await response.json();
-      isSuccess = result.status === "success";
+      isSuccess = Boolean(result && !result.error && (result.status === "success" || result.result === "success" || result.success === true));
     } catch (e) {
       if (response.ok) {
         isSuccess = true;
@@ -729,7 +799,7 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     return isSuccess;
   } catch (error) {
     console.error("[Google Sheets Super Admin Sync Error] Gagal push:", error);
-    throw error;
+    return false;
   }
 }
 
@@ -841,42 +911,37 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
 }
 
 export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promise<boolean> {
-  // 1. Sinkronisasi URL spreadsheet terbaru dari server
+  // 1. Ambil URL Super Admin terbaru dari server
   const url = await fetchSuperAdminSpreadsheetUrlFromServer();
-  if (!url) {
-    // Jika tidak ada URL spreadsheet di server/lokal, simpan lokal saja sebagai fallback
-    const teachers = loadTeacherAccounts();
-    if (teachers.some(t => t.username.toLowerCase() === newTeacher.username.toLowerCase())) {
-      throw new Error(`Username "${newTeacher.username}" sudah terdaftar.`);
-    }
-    const updated = [...teachers, newTeacher];
-    saveTeacherAccounts(updated);
-    return true;
+
+  // 2. Jika ada URL, tarik data guru terbaru dari Google Spreadsheet terlebih dahulu agar data sinkron
+  if (url) {
+    await pullSuperAdminFromGoogleSheets().catch((err) => {
+      console.warn("[Register Teacher] Gagal pull data guru dari spreadsheet sebelum pendaftaran:", err);
+    });
+  }
+  
+  let currentTeachers = loadTeacherAccounts();
+
+  // 3. Validasi username unik
+  if (currentTeachers.some(t => t.username.toLowerCase() === newTeacher.username.toLowerCase())) {
+    throw new Error(`Username "${newTeacher.username}" sudah terdaftar di sistem.`);
   }
 
-  try {
-    // 2. Tarik data guru terbaru dari Google Spreadsheet terlebih dahulu
-    await pullSuperAdminFromGoogleSheets().catch(() => {});
-    
-    let currentTeachers = loadTeacherAccounts();
+  // 4. Tambahkan guru baru ke daftar
+  const updated = [...currentTeachers, newTeacher];
 
-    // 3. Validasi username unik pada data terbaru
-    if (currentTeachers.some(t => t.username.toLowerCase() === newTeacher.username.toLowerCase())) {
-      throw new Error(`Username "${newTeacher.username}" sudah terdaftar di sistem.`);
+  // 5. Simpan ke local storage (ini otomatis memicu pushSuperAdminToGoogleSheets)
+  saveTeacherAccounts(updated);
+
+  // 6. Dorong eksplisit ke Google Spreadsheet jika URL tersedia
+  if (url) {
+    const pushed = await pushSuperAdminToGoogleSheets();
+    if (!pushed) {
+      console.warn("[Register Teacher] Pendaftaran guru tersimpan secara lokal, namun gagal terhubung ke Google Spreadsheet Super Admin. Pastikan URL Web App valid & memiliki izin 'Siapa Saja'.");
     }
-
-    // 4. Tambahkan guru baru ke daftar terbaru
-    const updated = [...currentTeachers, newTeacher];
-
-    // 5. Simpan ke local storage
-    saveTeacherAccounts(updated);
-
-    // 6. Dorong kembali daftar lengkap ke Google Spreadsheet (via proxy / direct)
-    await pushSuperAdminToGoogleSheets();
-    return true;
-  } catch (error: any) {
-    console.error("[Register and Sync Error] Detail kegagalan:", error);
-    throw error;
   }
+
+  return true;
 }
 

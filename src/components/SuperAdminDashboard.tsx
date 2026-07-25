@@ -809,6 +809,14 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                   placeholder="https://script.google.com/macros/s/.../exec"
                   className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-700 font-mono"
                 />
+                {spreadsheetUrl.includes('docs.google.com/spreadsheets') && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-semibold flex items-start gap-2">
+                    <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Perhatian:</strong> URL yang Anda masukkan adalah URL Google Spreadsheet. Gunakan <strong>URL Web App Google Apps Script</strong> (berawalan <code>https://script.google.com/macros/s/.../exec</code>) dari menu <em>Ekstensi &gt; Apps Script &gt; Deploy &gt; Penerapan Baru (Aplikasi Web, Akses: Siapa Saja)</em>.
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
