@@ -952,7 +952,12 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
 }
 
 function doPost(e) {
-  var params = JSON.parse(e.postData.contents);
+  var params = {};
+  try {
+    params = JSON.parse(e.postData.contents);
+  } catch(err) {
+    params = e.parameter || {};
+  }
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Guru");
   if (!sheet) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
@@ -960,23 +965,27 @@ function doPost(e) {
   sheet.clear();
   var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email"];
   sheet.appendRow(headers);
-  if (params.teachers && params.teachers.length > 0) {
-    for (var i = 0; i < params.teachers.length; i++) {
-      var t = params.teachers[i];
+  var list = params.teachers || params.Teachers || params.guru || params.Guru || params.data || [];
+  if (typeof list === 'string') {
+    try { list = JSON.parse(list); } catch(err) {}
+  }
+  if (list && list.length > 0) {
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
       sheet.appendRow([
         String(t.id || ""),
         String(t.nama || ""),
         String(t.username || ""),
         String(t.password || ""),
-        String(t.mataPelajaran || ""),
-        t.isApproved !== undefined ? t.isApproved : true,
-        String(t.asalSekolah || ""),
-        String(t.spreadsheetUrl || ""),
+        String(t.mataPelajaran || t.matapelajaran || "Informatika"),
+        t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : true),
+        String(t.asalSekolah || t.asalsekolah || ""),
+        String(t.spreadsheetUrl || t.spreadsheeturl || ""),
         String(t.email || "")
       ]);
     }
   }
-  return ContentService.createTextOutput(JSON.stringify({status: "success"}))
+  return ContentService.createTextOutput(JSON.stringify({status: "success", count: list ? list.length : 0}))
     .setMimeType(ContentService.MimeType.JSON);
 }`}
                     </pre>
@@ -1025,7 +1034,12 @@ function doPost(e) {
 }
 
 function doPost(e) {
-  var params = JSON.parse(e.postData.contents);
+  var params = {};
+  try {
+    params = JSON.parse(e.postData.contents);
+  } catch(err) {
+    params = e.parameter || {};
+  }
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Guru");
   if (!sheet) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
@@ -1033,23 +1047,27 @@ function doPost(e) {
   sheet.clear();
   var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email"];
   sheet.appendRow(headers);
-  if (params.teachers && params.teachers.length > 0) {
-    for (var i = 0; i < params.teachers.length; i++) {
-      var t = params.teachers[i];
+  var list = params.teachers || params.Teachers || params.guru || params.Guru || params.data || [];
+  if (typeof list === 'string') {
+    try { list = JSON.parse(list); } catch(err) {}
+  }
+  if (list && list.length > 0) {
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
       sheet.appendRow([
         String(t.id || ""),
         String(t.nama || ""),
         String(t.username || ""),
         String(t.password || ""),
-        String(t.mataPelajaran || ""),
-        t.isApproved !== undefined ? t.isApproved : true,
-        String(t.asalSekolah || ""),
-        String(t.spreadsheetUrl || ""),
+        String(t.mataPelajaran || t.matapelajaran || "Informatika"),
+        t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : true),
+        String(t.asalSekolah || t.asalsekolah || ""),
+        String(t.spreadsheetUrl || t.spreadsheeturl || ""),
         String(t.email || "")
       ]);
     }
   }
-  return ContentService.createTextOutput(JSON.stringify({status: "success"}))
+  return ContentService.createTextOutput(JSON.stringify({status: "success", count: list ? list.length : 0}))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
                         navigator.clipboard.writeText(code);

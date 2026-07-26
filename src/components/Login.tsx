@@ -316,13 +316,13 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         email: regEmail.trim(),
       };
 
-      await registerTeacherAndSync(newTeacher);
+      const regResult = await registerTeacherAndSync(newTeacher);
 
       // Refresh teachers list state
       const updatedTeachers = loadTeacherAccounts();
       setTeachersList(updatedTeachers);
 
-      setRegSuccess('Pendaftaran berhasil diajukan! Harap hubungi Super Admin untuk proses persetujuan (approval).');
+      setRegSuccess(regResult.message || 'Pendaftaran berhasil diajukan! Harap hubungi Super Admin untuk proses persetujuan (approval).');
       
       // Clear input fields
       setRegNama('');

@@ -757,7 +757,40 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     data: teachers,
   };
 
-  // 1. Try server-side gas-proxy first (uses exact URL & bypasses browser CORS/iframe restrictions)
+  const isSuccessResponse = (result: any, httpOk: boolean) => {
+    if (!result && httpOk) return true;
+    if (!result) return false;
+    if (result.error || result.status === 'error') return false;
+    return (
+      result.status === 'success' ||
+      result.result === 'success' ||
+      result.success === true ||
+      result.status === 'ok' ||
+      result.count !== undefined ||
+      Array.isArray(result.teachers) ||
+      Array.isArray(result.guru) ||
+      httpOk
+    );
+  };
+
+  // 1. Try server endpoint /api/superadmin/push first
+  try {
+    const serverPushRes = await fetch('/api/superadmin/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(db),
+    });
+    if (serverPushRes.ok) {
+      const result = await serverPushRes.json().catch(() => null);
+      if (isSuccessResponse(result, true)) {
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('[Super Admin Sync] /api/superadmin/push failed, trying gas-proxy...', e);
+  }
+
+  // 2. Try server-side gas-proxy
   try {
     const proxyRes = await fetch('/api/gas-proxy', {
       method: 'POST',
@@ -766,7 +799,7 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     });
     if (proxyRes.ok) {
       const result = await proxyRes.json().catch(() => null);
-      if (result && !result.error && (result.status === 'success' || result.result === 'success' || result.success === true || result.status === 'ok')) {
+      if (isSuccessResponse(result, true)) {
         return true;
       }
       if (result && (result.error || result.status === 'error')) {
@@ -777,7 +810,7 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     console.warn("[Super Admin Sync] Server gas-proxy push failed, falling back:", proxyErr);
   }
 
-  // 2. Direct client fetch fallback
+  // 3. Direct client fetch fallback
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -790,7 +823,7 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     let isSuccess = false;
     try {
       const result = await response.json();
-      isSuccess = Boolean(result && !result.error && (result.status === "success" || result.result === "success" || result.success === true));
+      isSuccess = isSuccessResponse(result, response.ok);
     } catch (e) {
       if (response.ok) {
         isSuccess = true;
@@ -903,14 +936,14 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
       }
     });
 
-    saveTeacherAccounts(mergedTeachers);
+    saveTeacherAccounts(mergedTeachers, true);
     return true;
   }
 
   return false;
 }
 
-export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promise<boolean> {
+export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promise<{ success: boolean; pushedToSheets: boolean; message: string }> {
   // 1. Ambil URL Super Admin terbaru dari server
   const url = await fetchSuperAdminSpreadsheetUrlFromServer();
 
@@ -931,17 +964,27 @@ export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promis
   // 4. Tambahkan guru baru ke daftar
   const updated = [...currentTeachers, newTeacher];
 
-  // 5. Simpan ke local storage (ini otomatis memicu pushSuperAdminToGoogleSheets)
-  saveTeacherAccounts(updated);
+  // 5. Simpan ke local storage (pass true untuk skip auto-push agar di-push secara eksplisit dengan penanganan respon di bawah)
+  saveTeacherAccounts(updated, true);
 
   // 6. Dorong eksplisit ke Google Spreadsheet jika URL tersedia
+  let pushed = false;
   if (url) {
-    const pushed = await pushSuperAdminToGoogleSheets();
+    pushed = await pushSuperAdminToGoogleSheets();
     if (!pushed) {
-      console.warn("[Register Teacher] Pendaftaran guru tersimpan secara lokal, namun gagal terhubung ke Google Spreadsheet Super Admin. Pastikan URL Web App valid & memiliki izin 'Siapa Saja'.");
+      console.warn("[Register Teacher] Pendaftaran guru tersimpan secara lokal, namun gagal terhubung ke Google Spreadsheet Super Admin.");
     }
   }
 
-  return true;
+  let msg = 'Pendaftaran berhasil diajukan! Harap hubungi Super Admin untuk proses persetujuan (approval).';
+  if (url) {
+    if (pushed) {
+      msg = 'Pendaftaran berhasil diajukan & tersimpan di Google Spreadsheet Super Admin! Harap hubungi Super Admin untuk proses persetujuan (approval).';
+    } else {
+      msg = 'Pendaftaran tersimpan di sistem, namun gagal terhubung ke Google Spreadsheet Super Admin. Pastikan URL Apps Script Web App valid & diset "Akses: Siapa saja".';
+    }
+  }
+
+  return { success: true, pushedToSheets: pushed, message: msg };
 }
 
