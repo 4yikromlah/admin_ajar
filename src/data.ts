@@ -888,7 +888,7 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
     }
   }
 
-  // Flexibly parse response payload
+  // Flexibly parse response payload to extract array of teachers
   let remoteTeachers: any[] = [];
   let isDbFound = false;
 
@@ -896,30 +896,76 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
     if (Array.isArray(db)) {
       remoteTeachers = db;
       isDbFound = true;
-    } else if (Array.isArray(db.teachers)) {
-      remoteTeachers = db.teachers;
-      isDbFound = true;
-    } else if (Array.isArray(db.data)) {
-      remoteTeachers = db.data;
-      isDbFound = true;
-    } else if (Array.isArray(db.Guru)) {
-      remoteTeachers = db.Guru;
-      isDbFound = true;
-    } else if (Array.isArray(db.guru)) {
-      remoteTeachers = db.guru;
-      isDbFound = true;
+    } else {
+      const keysToCheck = [
+        'teachers', 'data', 'Guru', 'guru', 'result', 'records', 'rows', 'items',
+        'list', 'guruList', 'teachersList', 'accounts', 'users', 'userList'
+      ];
+      for (const k of keysToCheck) {
+        if (Array.isArray(db[k])) {
+          remoteTeachers = db[k];
+          isDbFound = true;
+          break;
+        }
+      }
+      if (!isDbFound && db.data && typeof db.data === 'object') {
+        if (Array.isArray(db.data)) {
+          remoteTeachers = db.data;
+          isDbFound = true;
+        } else {
+          for (const k of keysToCheck) {
+            if (Array.isArray(db.data[k])) {
+              remoteTeachers = db.data[k];
+              isDbFound = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!isDbFound && db.result && typeof db.result === 'object') {
+        if (Array.isArray(db.result)) {
+          remoteTeachers = db.result;
+          isDbFound = true;
+        } else {
+          for (const k of keysToCheck) {
+            if (Array.isArray(db.result[k])) {
+              remoteTeachers = db.result[k];
+              isDbFound = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!isDbFound && typeof db === 'object') {
+        for (const k of Object.keys(db)) {
+          if (Array.isArray(db[k]) && db[k].length > 0 && typeof db[k][0] === 'object') {
+            remoteTeachers = db[k];
+            isDbFound = true;
+            break;
+          }
+        }
+      }
     }
   }
 
-  if (isDbFound) {
+  if (isDbFound && Array.isArray(remoteTeachers)) {
     const localTeachers = loadTeacherAccounts();
-    const mergedTeachers: TeacherAccount[] = remoteTeachers.map((remoteT: any, idx: number): TeacherAccount => {
-      const uName = String(remoteT.username || remoteT.Username || remoteT.USERNAME || '').trim();
-      const tId = String(remoteT.id || remoteT.ID || `T${idx + 1}`);
-      const localMatch = localTeachers.find(l => (uName && l.username.toLowerCase() === uName.toLowerCase()) || l.id === tId);
+    const parsedList: TeacherAccount[] = remoteTeachers.map((remoteT: any, idx: number): TeacherAccount => {
+      const uName = String(
+        remoteT.username ?? remoteT.Username ?? remoteT.USERNAME ?? remoteT.user ?? remoteT.User ?? remoteT.user_name ?? ''
+      ).trim();
+
+      const namaVal = String(
+        remoteT.nama ?? remoteT.Nama ?? remoteT.NAMA ?? remoteT.name ?? remoteT.Name ?? remoteT.fullName ?? ''
+      ).trim();
+
+      const finalUsername = uName || namaVal.toLowerCase().replace(/\s+/g, '');
+      const tId = String(remoteT.id || remoteT.ID || remoteT.Id || `T${idx + 1}`);
+
+      const localMatch = localTeachers.find(l => (finalUsername && l.username.toLowerCase() === finalUsername.toLowerCase()) || l.id === tId);
 
       // Seed super admins are always approved
-      const isSeedAdmin = uName.toLowerCase() === 'romlah' || uName.toLowerCase() === 'bambang';
+      const isSeedAdmin = finalUsername.toLowerCase() === 'romlah' || finalUsername.toLowerCase() === 'bambang' || finalUsername.toLowerCase() === 'admin';
 
       const rawApp = remoteT.isApproved !== undefined ? remoteT.isApproved :
                      (remoteT.isapproved !== undefined ? remoteT.isapproved :
@@ -937,23 +983,47 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
         isApp = true;
       } else if (rawApp !== undefined && rawApp !== null && String(rawApp).trim() !== '') {
         const appVal = String(rawApp).toLowerCase().trim();
-        isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes' || appVal === 'approved' || appVal === 'setuju' || appVal === 'ya');
+        isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes' || appVal === 'approved' || appVal === 'setuju' || appVal === 'ya' || appVal === 'y');
       } else {
         isApp = false;
       }
 
       return {
         id: tId,
-        nama: String(remoteT.nama || remoteT.Nama || remoteT.name || localMatch?.nama || ''),
-        username: uName || localMatch?.username || '',
-        password: String(remoteT.password || remoteT.Password || localMatch?.password || ''),
-        mataPelajaran: String(remoteT.mataPelajaran || remoteT.matapelajaran || remoteT.MataPelajaran || localMatch?.mataPelajaran || 'Informatika'),
+        nama: namaVal || localMatch?.nama || finalUsername,
+        username: finalUsername || localMatch?.username || '',
+        password: String(remoteT.password ?? remoteT.Password ?? remoteT.pass ?? localMatch?.password ?? ''),
+        mataPelajaran: String(remoteT.mataPelajaran ?? remoteT.matapelajaran ?? remoteT.MataPelajaran ?? remoteT.mapel ?? localMatch?.mataPelajaran ?? 'Informatika'),
         isApproved: isApp,
-        asalSekolah: String(remoteT.asalSekolah || remoteT.asalsekolah || remoteT.AsalSekolah || localMatch?.asalSekolah || ''),
-        spreadsheetUrl: String(remoteT.spreadsheetUrl || remoteT.spreadsheeturl || remoteT.SpreadsheetUrl || localMatch?.spreadsheetUrl || ''),
-        email: String(remoteT.email || remoteT.Email || localMatch?.email || '')
+        asalSekolah: String(remoteT.asalSekolah ?? remoteT.asalsekolah ?? remoteT.AsalSekolah ?? remoteT.sekolah ?? localMatch?.asalSekolah ?? ''),
+        spreadsheetUrl: String(remoteT.spreadsheetUrl ?? remoteT.spreadsheeturl ?? remoteT.SpreadsheetUrl ?? localMatch?.spreadsheetUrl ?? ''),
+        email: String(remoteT.email ?? remoteT.Email ?? localMatch?.email ?? '')
       };
-    }).filter((t: TeacherAccount) => t.username);
+    }).filter((t: TeacherAccount) => t.username.trim().length > 0);
+
+    // Group and merge duplicate accounts by username (if ANY entry is approved, set isApproved = true)
+    const teacherMap = new Map<string, TeacherAccount>();
+    for (const t of parsedList) {
+      const key = t.username.trim().toLowerCase();
+      if (!teacherMap.has(key)) {
+        teacherMap.set(key, { ...t });
+      } else {
+        const existing = teacherMap.get(key)!;
+        teacherMap.set(key, {
+          id: t.id || existing.id,
+          nama: (t.nama && t.nama !== t.username) ? t.nama : existing.nama,
+          username: existing.username,
+          password: t.password || existing.password,
+          mataPelajaran: (t.mataPelajaran && t.mataPelajaran !== 'Informatika') ? t.mataPelajaran : existing.mataPelajaran,
+          isApproved: existing.isApproved || t.isApproved, // True if ANY row is approved!
+          asalSekolah: t.asalSekolah || existing.asalSekolah,
+          spreadsheetUrl: t.spreadsheetUrl || existing.spreadsheetUrl,
+          email: t.email || existing.email
+        });
+      }
+    }
+
+    const mergedTeachers = Array.from(teacherMap.values());
 
     // Replace local browser storage completely with the remote spreadsheet database accounts
     saveTeacherAccounts(mergedTeachers, true);
