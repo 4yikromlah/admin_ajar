@@ -746,7 +746,27 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     return false;
   }
 
-  const teachers = loadTeacherAccounts();
+  const rawTeachers = loadTeacherAccounts();
+  const teacherMap = new Map<string, TeacherAccount>();
+  for (const t of rawTeachers) {
+    if (!t.username || !t.username.trim()) continue;
+    const key = t.username.trim().toLowerCase();
+    const isSeedAdmin = key === 'romlah' || key === 'bambang' || key === 'admin';
+    const isApp = isSeedAdmin || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1';
+
+    if (!teacherMap.has(key)) {
+      teacherMap.set(key, { ...t, username: key, isApproved: isApp });
+    } else {
+      const existing = teacherMap.get(key)!;
+      teacherMap.set(key, {
+        ...existing,
+        ...t,
+        username: key,
+        isApproved: isSeedAdmin || existing.isApproved || isApp
+      });
+    }
+  }
+  const teachers = Array.from(teacherMap.values());
 
   const db = {
     action: 'saveTeachers',
@@ -996,6 +1016,9 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
         mataPelajaran: String(remoteT.mataPelajaran ?? remoteT.matapelajaran ?? remoteT.MataPelajaran ?? remoteT.mapel ?? localMatch?.mataPelajaran ?? 'Informatika'),
         isApproved: isApp,
         asalSekolah: String(remoteT.asalSekolah ?? remoteT.asalsekolah ?? remoteT.AsalSekolah ?? remoteT.sekolah ?? localMatch?.asalSekolah ?? ''),
+        lastSyncAt: String(
+          remoteT.lastSyncAt ?? remoteT.lastsyncat ?? remoteT.last_sync ?? remoteT.lastSync ?? remoteT.timestamp ?? localMatch?.lastSyncAt ?? new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        ),
         spreadsheetUrl: String(remoteT.spreadsheetUrl ?? remoteT.spreadsheeturl ?? remoteT.SpreadsheetUrl ?? localMatch?.spreadsheetUrl ?? ''),
         email: String(remoteT.email ?? remoteT.Email ?? localMatch?.email ?? '')
       };
@@ -1051,8 +1074,13 @@ export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promis
     throw new Error(`Username "${newTeacher.username}" sudah terdaftar di sistem.`);
   }
 
-  // 4. Tambahkan guru baru ke daftar
-  const updated = [...currentTeachers, newTeacher];
+  // 4. Tambahkan guru baru ke daftar dengan timestamp sinkronisasi pendaftaran
+  const formattedTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const teacherWithSync: TeacherAccount = {
+    ...newTeacher,
+    lastSyncAt: newTeacher.lastSyncAt || formattedTime
+  };
+  const updated = [...currentTeachers, teacherWithSync];
 
   // 5. Simpan ke local storage (pass true untuk skip auto-push agar di-push secara eksplisit dengan penanganan respon di bawah)
   saveTeacherAccounts(updated, true);

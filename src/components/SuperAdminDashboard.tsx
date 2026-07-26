@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import { Users, BookOpen, Plus, Trash2, Edit2, LogOut, Key, ShieldAlert, Database, UserPlus, CheckCircle2, AlertCircle, School, HelpCircle, ArrowDown, ArrowUp, Mail } from 'lucide-react';
+import { 
+  Users, BookOpen, Plus, Trash2, Edit2, LogOut, Key, ShieldAlert, Database, 
+  UserPlus, CheckCircle2, AlertCircle, School, HelpCircle, ArrowDown, ArrowUp, 
+  Mail, Clock, Activity, RefreshCw, Terminal, Check, RotateCcw, Sparkles, 
+  Laptop, Smartphone, Send, ShieldCheck
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TeacherAccount } from '../types';
 import { 
@@ -20,6 +25,15 @@ interface SuperAdminDashboardProps {
   onImpersonateTeacher: (username: string) => void;
 }
 
+export interface SyncLogEntry {
+  id: string;
+  timestamp: string;
+  event: string;
+  detail: string;
+  type: 'success' | 'warning' | 'info';
+  username?: string;
+}
+
 export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: SuperAdminDashboardProps) {
   const [teachers, setTeachers] = useState<TeacherAccount[]>(() => loadTeacherAccounts());
   const [showAddForm, setShowAddForm] = useState(false);
@@ -35,6 +49,58 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   const [email, setEmail] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // System Sync Log & Timestamp States
+  const [syncLogs, setSyncLogs] = useState<SyncLogEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('smasa_superadmin_sync_logs');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    const initTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const initDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    return [
+      {
+        id: 'init-1',
+        timestamp: `${initDate} ${initTime}`,
+        event: 'SISTEM SUPER ADMIN AKTIF',
+        detail: 'Sistem log sinkronisasi dan pengawasan gadget guru diinisialisasi. Siap memantau pengiriman status persetujuan ke Cloud Database.',
+        type: 'info'
+      }
+    ];
+  });
+
+  const [lastGlobalSyncTime, setLastGlobalSyncTime] = useState<string>(() => {
+    return localStorage.getItem('smasa_superadmin_last_sync_time') || `${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+  });
+
+  const addSyncLog = (event: string, detail: string, type: 'success' | 'warning' | 'info' = 'info', username?: string) => {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    const fullStamp = `${dateStr} ${timeStr}`;
+
+    const newEntry: SyncLogEntry = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: fullStamp,
+      event,
+      detail,
+      type,
+      username
+    };
+
+    setSyncLogs(prev => {
+      const updated = [newEntry, ...prev].slice(0, 50);
+      try {
+        localStorage.setItem('smasa_superadmin_sync_logs', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    setLastGlobalSyncTime(fullStamp);
+    try {
+      localStorage.setItem('smasa_superadmin_last_sync_time', fullStamp);
+    } catch (e) {}
+  };
 
   // Super Admin Configuration States
   const [spreadsheetUrl, setSpreadsheetUrl] = useState(() => getSuperAdminSpreadsheetUrl());
@@ -59,16 +125,21 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
 
           const ok = await pullSuperAdminFromGoogleSheets();
           if (ok) {
-            setTeachers(loadTeacherAccounts());
-            setSuccessMsg('Data konfigurasi & data guru terbaru berhasil disinkronkan langsung dari Google Spreadsheet database!');
+            const loaded = loadTeacherAccounts();
+            setTeachers(loaded);
+            setSuccessMsg('Data akun guru & persetujuan terbaru berhasil disinkronkan langsung dari Google Spreadsheet database!');
+            addSyncLog('AUTO SYNC AWAL', `Inisialisasi berhasil: ${loaded.length} akun guru disinkronkan dari Google Spreadsheet database.`, 'success');
             setTimeout(() => setSuccessMsg(''), 4000);
           } else {
-            setTeachers(loadTeacherAccounts());
+            const loaded = loadTeacherAccounts();
+            setTeachers(loaded);
+            addSyncLog('LOAD LOKAL', `Menggunakan database lokal (${loaded.length} guru). Google Spreadsheet belum terhubung/kosong.`, 'info');
           }
         }
       } catch (err) {
         console.error("[Auto Pull on Mount Error]", err);
         setErrorMsg('Gagal menyinkronkan data otomatis dari Google Spreadsheet.');
+        addSyncLog('AUTO SYNC GAGAL', 'Gagal menyinkronkan data dari Cloud Spreadsheet pada muat awal.', 'warning');
         setTimeout(() => setErrorMsg(''), 4000);
       } finally {
         setIsSyncing(false);
@@ -98,13 +169,16 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       // Save locally and server-side
       await saveSuperAdminSpreadsheetUrlToServer(cleanUrl, cleanPassword, cleanEmail);
       setSuccessMsg('Konfigurasi Super Admin berhasil disimpan!');
+      addSyncLog('SIMPAN KONFIGURASI', 'URL Apps Script Super Admin & Sandi Pemulihan berhasil disimpan.', 'info');
       
       // Auto-pull immediately after saving to load existing data
       if (cleanUrl) {
         const ok = await pullSuperAdminFromGoogleSheets();
         if (ok) {
-          setTeachers(loadTeacherAccounts());
+          const loaded = loadTeacherAccounts();
+          setTeachers(loaded);
           setSuccessMsg('Konfigurasi berhasil disimpan & disinkronkan dengan Google Spreadsheet!');
+          addSyncLog('PULL SETELAH SIMPAN', `Sinkronisasi ulang berhasil: ${loaded.length} akun terunduh dari spreadsheet.`, 'success');
         } else {
           setErrorMsg('Konfigurasi disimpan, namun gagal mengambil data guru dari spreadsheet. Pastikan spreadsheet Anda memiliki format yang benar.');
         }
@@ -128,9 +202,11 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
         const ok = await pushSuperAdminToGoogleSheets();
         if (ok) {
           setSuccessMsg('Perubahan berhasil disinkronkan otomatis ke Google Spreadsheet!');
+          addSyncLog('AUTO PUSH SPREADSHEET', 'Data status persetujuan & daftar guru otomatis dikirim ke Google Spreadsheet.', 'success');
           setTimeout(() => setSuccessMsg(''), 3000);
         } else {
           setErrorMsg('Gagal menyinkronkan perubahan otomatis ke Google Spreadsheet.');
+          addSyncLog('AUTO PUSH GAGAL', 'Gagal mengirimkan perubahan data ke Google Spreadsheet Super Admin.', 'warning');
           setTimeout(() => setErrorMsg(''), 4000);
         }
       } catch (err: any) {
@@ -155,8 +231,10 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       const ok = await pushSuperAdminToGoogleSheets();
       if (ok) {
         setSuccessMsg('Berhasil mengirimkan data guru ke Google Spreadsheet Super Admin!');
+        addSyncLog('MANUAL PUSH SPREADSHEET', `Pengiriman manual: ${teachers.length} akun guru berhasil dipush ke Cloud Spreadsheet.`, 'success');
       } else {
         setErrorMsg('Gagal mengirimkan data ke Google Spreadsheet. Silakan periksa URL & izin Web App Anda.');
+        addSyncLog('MANUAL PUSH GAGAL', 'Gagal mengirimkan data ke Cloud Spreadsheet.', 'warning');
       }
     } catch (e: any) {
       setErrorMsg(`Gagal sinkronisasi: ${e?.message || e}`);
@@ -181,10 +259,13 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       localStorage.removeItem('smasa_teachers');
       const ok = await pullSuperAdminFromGoogleSheets();
       if (ok) {
-        setTeachers(loadTeacherAccounts());
+        const loaded = loadTeacherAccounts();
+        setTeachers(loaded);
         setSuccessMsg('Berhasil mengunduh & menyinkronkan data guru langsung dari database Google Spreadsheet!');
+        addSyncLog('MANUAL PULL SPREADSHEET', `Tarik data manual: ${loaded.length} akun guru berhasil disinkronkan dari Cloud Database.`, 'success');
       } else {
         setErrorMsg('Gagal mengunduh data dari Google Spreadsheet. Pastikan Spreadsheet Anda terisi data guru.');
+        addSyncLog('MANUAL PULL GAGAL', 'Gagal mengunduh data dari Cloud Spreadsheet.', 'warning');
       }
     } catch (e: any) {
       setErrorMsg(`Gagal mengambil data: ${e?.message || e}`);
@@ -220,6 +301,8 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       return;
     }
 
+    const nowStamp = `${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+
     const newTeacher: TeacherAccount = {
       id: `T${Date.now()}`,
       nama: nama.trim(),
@@ -229,12 +312,15 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       isApproved: true,
       asalSekolah: asalSekolah.trim(),
       email: email.trim(),
+      lastSyncAt: nowStamp
     };
 
     const updated = [...teachers, newTeacher];
     setTeachers(updated);
     saveTeacherAccounts(updated);
     triggerAutoPush();
+
+    addSyncLog('TAMBAH AKUN GURU', `Akun guru baru "${nama.trim()}" (@${cleanUsername}) ditambahkan secara langsung. Status: Disetujui.`, 'success', cleanUsername);
 
     // Reset
     setNama('');
@@ -244,7 +330,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setAsalSekolah('SMA Negeri 1 Salatiga');
     setEmail('');
     setShowAddForm(false);
-    setSuccessMsg('Akun guru baru berhasil ditambahkan!');
+    setSuccessMsg(`Akun guru baru berhasil ditambahkan! Timestamp sync: ${nowStamp}`);
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
@@ -272,11 +358,14 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       return;
     }
 
+    const nowStamp = `${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+
     const updated = teachers.map(t => {
       if (t.id === editingTeacher.id) {
         return {
           ...editingTeacher,
           username: cleanUsername,
+          lastSyncAt: nowStamp
         };
       }
       return t;
@@ -286,6 +375,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     saveTeacherAccounts(updated);
     triggerAutoPush();
     setEditingTeacher(null);
+    addSyncLog('EDIT AKUN GURU', `Data kredensial guru "${editingTeacher.nama}" (@${cleanUsername}) diperbarui. Timestamp sync: ${nowStamp}`, 'info', cleanUsername);
     setSuccessMsg('Kredensial akun guru berhasil diperbarui!');
     setTimeout(() => setSuccessMsg(''), 4000);
   };
@@ -299,9 +389,11 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
 
   const handleApproveTeacher = (id: string, name: string) => {
     const targetTeacher = teachers.find(t => t.id === id);
+    const nowStamp = `${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+
     const updated = teachers.map(t => {
       if (t.id === id) {
-        return { ...t, isApproved: true };
+        return { ...t, isApproved: true, lastSyncAt: nowStamp };
       }
       return t;
     });
@@ -319,7 +411,31 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setTeachers(updated);
     saveTeacherAccounts(updated);
     triggerAutoPush();
-    setSuccessMsg(`Pendaftaran guru "${name}" berhasil disetujui! Notifikasi persetujuan telah diaktifkan untuk akun tersebut.`);
+
+    addSyncLog('PERSETUJUAN DISETUJUI', `Akun Guru "${name}" (@${targetTeacher?.username || ''}) berhasil DISETUJUI. Hak akses dikirim ke Cloud Spreadsheet database untuk gadget guru.`, 'success', targetTeacher?.username);
+
+    setSuccessMsg(`Pendaftaran guru "${name}" berhasil DISETUJUI! Data persetujuan terkirim (Sync: ${nowStamp}).`);
+    setTimeout(() => setSuccessMsg(''), 5000);
+  };
+
+  const handleRevokeApproveTeacher = (id: string, name: string) => {
+    const targetTeacher = teachers.find(t => t.id === id);
+    const nowStamp = `${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+
+    const updated = teachers.map(t => {
+      if (t.id === id) {
+        return { ...t, isApproved: false, lastSyncAt: nowStamp };
+      }
+      return t;
+    });
+
+    setTeachers(updated);
+    saveTeacherAccounts(updated);
+    triggerAutoPush();
+
+    addSyncLog('PERSETUJUAN DICABUT', `Akses Guru "${name}" (@${targetTeacher?.username || ''}) DICABUT. Status dikembalikan ke Menunggu Persetujuan.`, 'warning', targetTeacher?.username);
+
+    setSuccessMsg(`Persetujuan untuk guru "${name}" berhasil DICABUT. Sync: ${nowStamp}`);
     setTimeout(() => setSuccessMsg(''), 5000);
   };
 
@@ -672,6 +788,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                   <th className="py-4 px-5">Nama & Mapel</th>
                   <th className="py-4 px-5">Kredensial</th>
                   <th className="py-4 px-5 text-center">Basis Data</th>
+                  <th className="py-4 px-5 text-center">Status Sync Gadget</th>
                   <th className="py-4 px-5 text-center">Jumlah Siswa</th>
                   <th className="py-4 px-5 text-right">Aksi & Integrasi</th>
                 </tr>
@@ -679,7 +796,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
               <tbody className="divide-y divide-slate-50 text-xs">
                 {teachers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-10 text-center text-slate-400 font-bold">
+                    <td colSpan={6} className="py-10 text-center text-slate-400 font-bold">
                       Belum ada guru yang didaftarkan.
                     </td>
                   </tr>
@@ -736,10 +853,29 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                             </span>
                           )}
                         </td>
+                        <td className="py-4 px-5 text-center">
+                          <div className="flex items-center justify-center gap-1 font-mono text-[10px] font-bold text-slate-700">
+                            <Clock size={11} className="text-slate-400 shrink-0" />
+                            <span>{t.lastSyncAt || lastGlobalSyncTime}</span>
+                          </div>
+                          <div className="mt-1">
+                            {isApproved ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[9px] border border-emerald-200">
+                                <CheckCircle2 size={10} className="text-emerald-500" />
+                                Terkirim ke Cloud
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-extrabold text-[9px] border border-amber-200">
+                                <AlertCircle size={10} className="text-amber-500" />
+                                Menunggu Approval
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-4 px-5 text-center font-mono font-bold text-slate-700">
                           {studentCount} Siswa
                         </td>
-                        <td className="py-4 px-5 text-right space-x-2">
+                        <td className="py-4 px-5 text-right space-x-1.5">
                           {!isApproved ? (
                             <button
                               onClick={() => handleApproveTeacher(t.id, t.nama)}
@@ -750,13 +886,24 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                               <span>Setujui</span>
                             </button>
                           ) : (
-                            <button
-                              onClick={() => onImpersonateTeacher(t.username)}
-                              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 font-bold text-[11px] inline-flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
-                              title="Masuk sebagai guru ini untuk mengelola datanya secara independen"
-                            >
-                              <span>Masuk</span>
-                            </button>
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                onClick={() => onImpersonateTeacher(t.username)}
+                                className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 font-bold text-[11px] inline-flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                                title="Masuk sebagai guru ini untuk mengelola datanya secara independen"
+                              >
+                                <span>Masuk</span>
+                              </button>
+                              {!(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin') && (
+                                <button
+                                  onClick={() => handleRevokeApproveTeacher(t.id, t.nama)}
+                                  className="px-2 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 cursor-pointer border border-amber-200"
+                                  title="Batalkan/Cabut persetujuan pendaftaran guru ini"
+                                >
+                                  <span>Cabut Akses</span>
+                                </button>
+                              )}
+                            </div>
                           )}
                           
                           <button
@@ -1145,7 +1292,213 @@ function doPost(e) {
               </details>
             </div>
           </div>
+        </div>
 
+        {/* SECTION LOG SISTEM & STATUS SINKRONISASI GADGET GURU */}
+        <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-inner">
+                <Activity size={22} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-extrabold uppercase tracking-wider">Log Sinkronisasi Real-Time</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                </div>
+                <h2 className="text-lg font-black text-slate-800 tracking-tight">Status Sinkronisasi & Log Sistem Gadget Guru</h2>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerAutoPush();
+                  addSyncLog('REFRESH SYNC', 'Pengecekan dan pendorongan manual status persetujuan ke Cloud Database dijalankan.', 'info');
+                }}
+                disabled={isSyncing}
+                className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer border border-indigo-100 shadow-sm"
+              >
+                <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
+                <span>Sync Ulang Semua Akun</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSyncLogs([]);
+                  localStorage.removeItem('smasa_superadmin_sync_logs');
+                }}
+                className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-500 font-bold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200"
+              >
+                <Trash2 size={14} />
+                <span>Bersihkan Log</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Status Summary KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/80 to-blue-50/40 border border-indigo-100 flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-200">
+                <Clock size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider">Sync Cloud Terakhir</p>
+                <p className="text-sm font-black text-slate-800 font-mono mt-0.5">{lastGlobalSyncTime}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 font-semibold">Database Spreadsheet Cloud</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50/80 to-teal-50/40 border border-emerald-100 flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-200">
+                <CheckCircle2 size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">Status Akses Terkirim</p>
+                <p className="text-sm font-black text-slate-800 mt-0.5">{teachers.filter(t => t.isApproved).length} / {teachers.length} Guru Disetujui</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 font-semibold">Siap di-fetch gadget masing-masing</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/80 to-orange-50/40 border border-amber-100 flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-200">
+                <Smartphone size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] font-extrabold text-amber-600 uppercase tracking-wider">Integrasi Device / Gadget</p>
+                <p className="text-sm font-black text-slate-800 mt-0.5">{spreadsheetUrl ? 'Otomatis via Cloud' : 'Sinkronisasi Lokal'}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 font-semibold">Otomatis sync saat login / refresh</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Detail Log Timestamp Sync per Akun Guru */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                <Users size={14} className="text-indigo-600" />
+                Detail Timestamp Sinkronisasi per Akun Guru
+              </h3>
+              <span className="text-[10px] font-bold text-slate-400">Total {teachers.length} Akun Terdaftar</span>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-slate-50/50">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100/70 text-[10px] font-black text-slate-500 uppercase tracking-wider border-b border-slate-200/60">
+                    <th className="py-3.5 px-4">Guru / Username</th>
+                    <th className="py-3.5 px-4">Status Approval</th>
+                    <th className="py-3.5 px-4">Timestamp Sync Terakhir</th>
+                    <th className="py-3.5 px-4">Status Pengiriman Gadget</th>
+                    <th className="py-3.5 px-4 text-right">Aksi Sync</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs bg-white">
+                  {teachers.map((t) => {
+                    const isApproved = t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1';
+                    
+                    return (
+                      <tr key={`sync-${t.id}`} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-800">
+                          <div>{t.nama}</div>
+                          <div className="font-mono text-[10px] text-indigo-600 font-medium">@{t.username}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          {isApproved ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">
+                              <CheckCircle2 size={11} className="text-emerald-500" />
+                              Disetujui
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">
+                              <Clock size={11} className="text-amber-500" />
+                              Menunggu Approval
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[11px] font-bold text-slate-700">
+                          <div className="flex items-center gap-1.5">
+                            <Clock size={12} className="text-slate-400" />
+                            <span>{t.lastSyncAt || lastGlobalSyncTime}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          {isApproved ? (
+                            <div className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5">
+                              <Send size={12} className="text-emerald-500 shrink-0" />
+                              <span>Data persetujuan terkirim ke Cloud. Siap di-fetch gadget guru.</span>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-amber-700 font-medium flex items-center gap-1.5">
+                              <AlertCircle size={12} className="text-amber-500 shrink-0" />
+                              <span>Menunggu approval Super Admin agar dapat login di gadget.</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nowStamp = `${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+                              const updated = teachers.map(tc => tc.id === t.id ? { ...tc, lastSyncAt: nowStamp } : tc);
+                              setTeachers(updated);
+                              saveTeacherAccounts(updated);
+                              triggerAutoPush();
+                              addSyncLog('SINKRONISASI AKUN', `Pembaruan & sinkronisasi manual untuk akun "${t.nama}" (@${t.username}). Timestamp sync: ${nowStamp}`, 'info', t.username);
+                              setSuccessMsg(`Berhasil menyinkronkan ulang data untuk ${t.nama}!`);
+                              setTimeout(() => setSuccessMsg(''), 3000);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 border border-indigo-200 cursor-pointer"
+                          >
+                            <RefreshCw size={11} />
+                            <span>Sync Akun Ini</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Real-time System Console Log Stream */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                <Terminal size={14} className="text-slate-700" />
+                Konsol Aktivitas & Log Sistem Real-Time
+              </h3>
+              <span className="text-[10px] font-mono font-bold text-slate-400">{syncLogs.length} Entri Log</span>
+            </div>
+
+            <div className="bg-slate-900 rounded-2xl p-4 font-mono text-[11px] text-slate-200 space-y-2 max-h-64 overflow-y-auto shadow-inner border border-slate-800">
+              {syncLogs.length === 0 ? (
+                <p className="text-slate-500 italic py-4 text-center">Belum ada log aktivitas sinkronisasi tercatat.</p>
+              ) : (
+                syncLogs.map((log) => {
+                  let badgeBg = 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+                  if (log.type === 'success') badgeBg = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+                  if (log.type === 'warning') badgeBg = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+
+                  return (
+                    <div key={log.id} className="flex items-start gap-2.5 border-b border-slate-800/60 pb-2 leading-relaxed">
+                      <span className="text-slate-500 text-[10px] shrink-0 font-mono mt-0.5">[{log.timestamp}]</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider border shrink-0 ${badgeBg}`}>
+                        {log.event}
+                      </span>
+                      <span className="text-slate-300 flex-1">
+                        {log.detail}
+                        {log.username && <span className="text-indigo-400 font-bold ml-1">(@{log.username})</span>}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
 
       </div>
