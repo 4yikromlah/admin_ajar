@@ -3,11 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School, Mail, ArrowLeft, Lock } from 'lucide-react';
+import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School, Mail, ArrowLeft, Lock, BellRing, Search, CheckCircle2, X } from 'lucide-react';
 import { Siswa, AppSettings, TeacherAccount } from '../types';
 import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchSuperAdminSpreadsheetUrlFromServer, pullSuperAdminFromGoogleSheets, getTeacherSettings } from '../data';
+import { ToastNotification, ToastProps } from './ToastNotification';
 
 interface LoginProps {
   siswaList: Siswa[];
@@ -110,6 +111,198 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
   // Load teachers to populate school dropdown
   const [teachersList, setTeachersList] = useState<TeacherAccount[]>(() => loadTeacherAccounts());
 
+  // Toast Notification & Check Status Modal State
+  const [toastData, setToastData] = useState<ToastProps>({
+    show: false,
+    title: '',
+    message: '',
+    type: 'success',
+    onClose: () => setToastData(prev => ({ ...prev, show: false }))
+  });
+
+  const [showCheckStatusModal, setShowCheckStatusModal] = useState(false);
+  const [checkUsernameInput, setCheckUsernameInput] = useState('');
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+
+  // Trigger Native Browser Web Notification
+  const triggerBrowserNotification = (title: string, body: string) => {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification(title, {
+          body,
+          icon: '/favicon.ico',
+        });
+      } catch (e) {
+        console.warn('Browser notification error:', e);
+      }
+    }
+  };
+
+  // Helper to check approval status on demand or in background
+  const performApprovalCheck = async (targetUser?: string) => {
+    const userToCheck = targetUser || checkUsernameInput;
+    if (!userToCheck.trim()) {
+      setToastData({
+        show: true,
+        type: 'warning',
+        title: 'Perhatian',
+        message: 'Masukkan username atau nama pendaftaran Anda terlebih dahulu.',
+        onClose: () => setToastData(prev => ({ ...prev, show: false }))
+      });
+      return;
+    }
+
+    setIsCheckingStatus(true);
+    try {
+      await pullSuperAdminFromGoogleSheets();
+      const updated = loadTeacherAccounts();
+      setTeachersList(updated);
+
+      const cleanT = userToCheck.trim().toLowerCase();
+      const matched = updated.find(
+        t => t.username.trim().toLowerCase() === cleanT || (t.email && t.email.trim().toLowerCase() === cleanT)
+      );
+
+      if (!matched) {
+        setToastData({
+          show: true,
+          type: 'error',
+          title: 'Akun Tidak Ditemukan',
+          message: `Tidak ditemukan akun pendaftaran dengan username/email "${userToCheck}".`,
+          onClose: () => setToastData(prev => ({ ...prev, show: false }))
+        });
+        setIsCheckingStatus(false);
+        return;
+      }
+
+      const isApp = matched.isApproved === true ||
+                     String(matched.isApproved).trim().toLowerCase() === 'true' ||
+                     String(matched.isApproved).trim() === '1' ||
+                     String(matched.isApproved).trim().toLowerCase() === 'yes';
+
+      if (isApp) {
+        setToastData({
+          show: true,
+          type: 'success',
+          title: '🎉 Status: DISETUJUI!',
+          message: `Selamat Bp/Ibu ${matched.nama}! Akun Anda (@${matched.username}) telah DISETUJUI oleh Super Admin. Silakan masukkan kata sandi Anda untuk masuk.`,
+          actionText: 'Login Sekarang',
+          onAction: () => {
+            setIsRegistering(false);
+            setRole('guru');
+            setGuruUsername(matched.username);
+            setShowCheckStatusModal(false);
+          },
+          onClose: () => setToastData(prev => ({ ...prev, show: false }))
+        });
+
+        triggerBrowserNotification(
+          'SI-AP SMASA: Akun Guru Disetujui!',
+          `Selamat ${matched.nama}, akun Anda (@${matched.username}) telah disetujui oleh Super Admin. Silakan login.`
+        );
+
+        setIsRegistering(false);
+        setRole('guru');
+        setGuruUsername(matched.username);
+      } else {
+        setToastData({
+          show: true,
+          type: 'info',
+          title: '⏳ Status: Menunggu Persetujuan',
+          message: `Akun ${matched.nama} (@${matched.username}) masih dalam peninjauan oleh Super Admin. Notifikasi akan muncul otomatis begitu akun disetujui.`,
+          actionText: ('Notification' in window && Notification.permission !== 'granted') ? '🔔 Izinkan Notifikasi Browser' : undefined,
+          onAction: () => {
+            if ('Notification' in window) {
+              Notification.requestPermission().then(perm => {
+                if (perm === 'granted') {
+                  setToastData({
+                    show: true,
+                    type: 'success',
+                    title: '🔔 Notifikasi Browser Aktif',
+                    message: 'Anda akan menerima pemberitahuan langsung di layar ketika Super Admin menyetujui akun Anda.',
+                    onClose: () => setToastData(prev => ({ ...prev, show: false }))
+                  });
+                }
+              });
+            }
+          },
+          onClose: () => setToastData(prev => ({ ...prev, show: false }))
+        });
+      }
+    } catch (err) {
+      console.warn("Error checking approval status:", err);
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  // Background Auto-Polling for Candidates Approval State
+  useEffect(() => {
+    const checkPendingApprovals = async () => {
+      try {
+        await pullSuperAdminFromGoogleSheets();
+        const updated = loadTeacherAccounts();
+        setTeachersList(updated);
+
+        const pendingStr = localStorage.getItem('smasa_pending_approval_user');
+        if (!pendingStr) return;
+
+        const pendingUsers: string[] = JSON.parse(pendingStr);
+        if (!Array.isArray(pendingUsers) || pendingUsers.length === 0) return;
+
+        const notifiedStr = localStorage.getItem('smasa_notified_approved_teachers') || '[]';
+        const notifiedUsers: string[] = JSON.parse(notifiedStr);
+
+        for (const pUsr of pendingUsers) {
+          const cleanP = pUsr.trim().toLowerCase();
+          if (notifiedUsers.includes(cleanP)) continue;
+
+          const match = updated.find(t => t.username.trim().toLowerCase() === cleanP);
+          if (match) {
+            const isApp = match.isApproved === true ||
+                           String(match.isApproved).trim().toLowerCase() === 'true' ||
+                           String(match.isApproved).trim() === '1' ||
+                           String(match.isApproved).trim().toLowerCase() === 'yes';
+
+            if (isApp) {
+              setToastData({
+                show: true,
+                type: 'success',
+                title: '🎉 Akun Anda Telah Disetujui!',
+                message: `Selamat Bp/Ibu ${match.nama}! Pendaftaran akun Guru (@${match.username}) Anda telah DISETUJUI oleh Super Admin.`,
+                actionText: 'Masuk Portal Guru',
+                onAction: () => {
+                  setIsRegistering(false);
+                  setRole('guru');
+                  setGuruUsername(match.username);
+                },
+                onClose: () => setToastData(prev => ({ ...prev, show: false }))
+              });
+
+              triggerBrowserNotification(
+                'SI-AP SMASA: Akun Guru Disetujui!',
+                `Selamat ${match.nama}, pendaftaran akun Guru (@${match.username}) Anda telah disetujui Super Admin! Silakan login.`
+              );
+
+              setIsRegistering(false);
+              setRole('guru');
+              setGuruUsername(match.username);
+
+              const newNotified = [...notifiedUsers, cleanP];
+              localStorage.setItem('smasa_notified_approved_teachers', JSON.stringify(newNotified));
+              break;
+            }
+          }
+        }
+      } catch (err) {}
+    };
+
+    checkPendingApprovals();
+    const interval = setInterval(checkPendingApprovals, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Auto-sync on mount to pull latest teachers from centralized spreadsheet database
   React.useEffect(() => {
     const syncTeachers = async () => {
@@ -175,9 +368,17 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       return;
     }
 
-    // 2. Check Teacher Accounts
-    const teacherByUsername = latestTeachers.find(
-      (t) => t.username.toLowerCase() === cleanUsername
+    // 2. Check Teacher Accounts in latest central list or local storage
+    const allLocalTeachers = loadTeacherAccounts();
+    const mergedList = [...latestTeachers];
+    allLocalTeachers.forEach(lt => {
+      if (!mergedList.some(m => m.username.trim().toLowerCase() === lt.username.trim().toLowerCase())) {
+        mergedList.push(lt);
+      }
+    });
+
+    const teacherByUsername = mergedList.find(
+      (t) => t.username.trim().toLowerCase() === cleanUsername
     );
 
     if (teacherByUsername) {
@@ -187,7 +388,11 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         return;
       }
 
-      const isApproved = teacherByUsername.isApproved === true || String(teacherByUsername.isApproved).toLowerCase() === 'true';
+      const isApproved = teacherByUsername.isApproved === true ||
+                         String(teacherByUsername.isApproved).trim().toLowerCase() === 'true' ||
+                         String(teacherByUsername.isApproved).trim() === '1' ||
+                         String(teacherByUsername.isApproved).trim().toLowerCase() === 'yes';
+
       if (!isApproved) {
         setGuruError('Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Super Admin!');
         setIsGuruLoading(false);
@@ -256,38 +461,38 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       return;
     }
 
-      // 3. Fallback to settings adminUsername and adminPassword
-      const allowedUsername = (settings?.adminUsername || 'admin').trim().toLowerCase();
-      const allowedPassword = settings?.adminPassword || 'admin123';
+    // 3. Fallback to settings adminUsername and adminPassword (only for system default admin, not unapproved teacher accounts)
+    const allowedUsername = (settings?.adminUsername || 'admin').trim().toLowerCase();
+    const allowedPassword = settings?.adminPassword || 'admin123';
 
-      if (cleanUsername === allowedUsername && guruPassword === allowedPassword) {
-        localStorage.setItem('hasEverLoggedIn', 'true');
+    if (cleanUsername === allowedUsername && guruPassword === allowedPassword && cleanUsername === 'admin') {
+      localStorage.setItem('hasEverLoggedIn', 'true');
 
-        const sName = settings?.kopSekolah || 'MGMP INFORMATIKA BONDOWOSO';
-        const sLogo = settings?.logoSekolah || '';
-        const sMataPelajaran = settings?.mataPelajaran || 'Informatika';
-        const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      const sName = settings?.kopSekolah || 'MGMP INFORMATIKA BONDOWOSO';
+      const sLogo = settings?.logoSekolah || '';
+      const sMataPelajaran = settings?.mataPelajaran || 'Informatika';
+      const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 
-        localStorage.setItem('lastLoggedInSchoolName', sName);
-        localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
-        localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
-        localStorage.setItem('lastLoggedInTime', loginTime);
-        localStorage.setItem('lastLoggedInUserNama', settings?.namaGuru || 'Guru');
-        localStorage.setItem('lastLoggedInRole', 'guru');
+      localStorage.setItem('lastLoggedInSchoolName', sName);
+      localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
+      localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
+      localStorage.setItem('lastLoggedInTime', loginTime);
+      localStorage.setItem('lastLoggedInUserNama', settings?.namaGuru || 'Guru');
+      localStorage.setItem('lastLoggedInRole', 'guru');
 
-        setLoginSuccessData({
-          role: 'guru',
-          nama: settings?.namaGuru || 'Guru',
-          sekolah: sName,
-          logo: sLogo,
-          mataPelajaran: sMataPelajaran
-        });
+      setLoginSuccessData({
+        role: 'guru',
+        nama: settings?.namaGuru || 'Guru',
+        sekolah: sName,
+        logo: sLogo,
+        mataPelajaran: sMataPelajaran
+      });
 
-        setTimeout(() => {
-          onTeacherLoginSuccess(cleanUsername);
-        }, 2200);
-        return;
-      }
+      setTimeout(() => {
+        onTeacherLoginSuccess(cleanUsername);
+      }, 2200);
+      return;
+    }
 
       setGuruError('Username atau Password Guru salah!');
       setIsGuruLoading(false);
@@ -327,11 +532,32 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
       const regResult = await registerTeacherAndSync(newTeacher);
 
+      // Save to pending approval list for auto-notification on approval
+      const pendingStr = localStorage.getItem('smasa_pending_approval_user');
+      const pendingUsers: string[] = pendingStr ? JSON.parse(pendingStr) : [];
+      if (!pendingUsers.includes(cleanUsername)) {
+        pendingUsers.push(cleanUsername);
+        localStorage.setItem('smasa_pending_approval_user', JSON.stringify(pendingUsers));
+      }
+
+      // Request browser notification permission if available
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+
       // Refresh teachers list state
       const updatedTeachers = loadTeacherAccounts();
       setTeachersList(updatedTeachers);
 
       setRegSuccess(regResult.message || 'Pendaftaran berhasil diajukan! Harap hubungi Super Admin untuk proses persetujuan (approval).');
+
+      setToastData({
+        show: true,
+        type: 'info',
+        title: '📝 Pendaftaran Berhasil Diajukan',
+        message: `Akun Guru (@${cleanUsername}) telah terdaftar. Fitur notifikasi otomatis telah diaktifkan untuk memberi tahu Anda saat akun disetujui Super Admin.`,
+        onClose: () => setToastData(prev => ({ ...prev, show: false }))
+      });
       
       // Clear input fields
       setRegNama('');
@@ -1200,7 +1426,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                     </button>
                   </form>
 
-                  <div className="text-center pt-2">
+                  <div className="text-center pt-2 space-y-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1214,6 +1440,19 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                     >
                       <UserPlus size={14} />
                       <span>Belum punya akun? Daftar sebagai Guru baru</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCheckStatusModal(true);
+                        setCheckUsernameInput(guruUsername || regUsername);
+                      }}
+                      className="text-[11px] text-amber-700 hover:text-amber-900 bg-amber-50/80 hover:bg-amber-100 px-3.5 py-2 rounded-xl border border-amber-200/70 font-extrabold flex items-center justify-center gap-1.5 mx-auto transition-all cursor-pointer shadow-xs active:scale-95"
+                      id="btn-check-approval-status"
+                    >
+                      <BellRing size={13} className="text-amber-600 animate-pulse" />
+                      <span>Cek Status Persetujuan & Notifikasi Akun</span>
                     </button>
                   </div>
                 </>
@@ -1503,6 +1742,94 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
           </p>
         </div>
       </motion.div>
+
+      {/* Modal Cek Status Persetujuan & Notifikasi Akun */}
+      <AnimatePresence>
+        {showCheckStatusModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-slate-100 relative space-y-5"
+            >
+              <button
+                type="button"
+                onClick={() => setShowCheckStatusModal(false)}
+                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-100 text-amber-700 rounded-2xl">
+                  <BellRing size={24} className="animate-bounce" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-800">Cek Status Persetujuan Akun</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Sistem akan memeriksa status terkini dari database Super Admin
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">
+                  Username / Email Pendaftaran Guru
+                </label>
+                <div className="relative">
+                  <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={checkUsernameInput}
+                    onChange={(e) => setCheckUsernameInput(e.target.value)}
+                    placeholder="Masukkan username atau email Anda"
+                    className="w-full text-xs pl-11 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-semibold text-slate-700 placeholder-slate-400 shadow-inner"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-[11px] text-slate-600 space-y-1.5">
+                <div className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-amber-500" />
+                  <span>Notifikasi Browser Otomatis</span>
+                </div>
+                <p className="leading-relaxed">
+                  Jika akun Anda telah disetujui oleh Super Admin, sistem akan menampilkan notifikasi toast & notifikasi browser secara langsung.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => performApprovalCheck()}
+                  disabled={isCheckingStatus}
+                  className="flex-1 py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-amber-100 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-75"
+                >
+                  {isCheckingStatus ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <Search size={15} />
+                      <span>Periksa Status Sekarang</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <ToastNotification
+        show={toastData.show}
+        type={toastData.type}
+        title={toastData.title}
+        message={toastData.message}
+        actionText={toastData.actionText}
+        onAction={toastData.onAction}
+        onClose={() => setToastData(prev => ({ ...prev, show: false }))}
+      />
     </div>
   );
 }

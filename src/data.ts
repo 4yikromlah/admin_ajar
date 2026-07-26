@@ -914,19 +914,34 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
   if (isDbFound) {
     const localTeachers = loadTeacherAccounts();
     const mergedTeachers: TeacherAccount[] = remoteTeachers.map((remoteT: any, idx: number): TeacherAccount => {
-      const uName = String(remoteT.username || remoteT.Username || '').trim();
+      const uName = String(remoteT.username || remoteT.Username || remoteT.USERNAME || '').trim();
       const tId = String(remoteT.id || remoteT.ID || `T${idx + 1}`);
       const localMatch = localTeachers.find(l => (uName && l.username.toLowerCase() === uName.toLowerCase()) || l.id === tId);
 
-      const rawApp = remoteT.isApproved !== undefined ? remoteT.isApproved : remoteT.isapproved;
+      // Seed super admins are always approved
+      const isSeedAdmin = uName.toLowerCase() === 'romlah' || uName.toLowerCase() === 'bambang';
+
+      const rawApp = remoteT.isApproved !== undefined ? remoteT.isApproved :
+                     (remoteT.isapproved !== undefined ? remoteT.isapproved :
+                     (remoteT.IsApproved !== undefined ? remoteT.IsApproved :
+                     (remoteT.approved !== undefined ? remoteT.approved :
+                     (remoteT.Approved !== undefined ? remoteT.Approved :
+                     (remoteT.is_approved !== undefined ? remoteT.is_approved :
+                     (remoteT.Is_Approved !== undefined ? remoteT.Is_Approved :
+                     (remoteT.status !== undefined ? remoteT.status :
+                     (remoteT.Status !== undefined ? remoteT.Status :
+                     (remoteT.Approval !== undefined ? remoteT.Approval : undefined)))))))));
+
       let isApp = false;
-      if (rawApp !== undefined && rawApp !== null && String(rawApp).trim() !== '') {
+      if (isSeedAdmin) {
+        isApp = true;
+      } else if (rawApp !== undefined && rawApp !== null && String(rawApp).trim() !== '') {
         const appVal = String(rawApp).toLowerCase().trim();
-        isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes');
+        isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes' || appVal === 'approved' || appVal === 'setuju');
       } else if (localMatch && localMatch.isApproved !== undefined) {
-        isApp = Boolean(localMatch.isApproved === true || String(localMatch.isApproved).toLowerCase() === 'true');
+        isApp = Boolean(localMatch.isApproved === true || String(localMatch.isApproved).toLowerCase().trim() === 'true');
       } else {
-        isApp = (uName.toLowerCase() === 'romlah' || uName.toLowerCase() === 'bambang');
+        isApp = false;
       }
 
       return {

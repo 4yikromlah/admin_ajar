@@ -298,16 +298,28 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   };
 
   const handleApproveTeacher = (id: string, name: string) => {
+    const targetTeacher = teachers.find(t => t.id === id);
     const updated = teachers.map(t => {
       if (t.id === id) {
         return { ...t, isApproved: true };
       }
       return t;
     });
+
+    if (targetTeacher) {
+      const uName = targetTeacher.username.trim().toLowerCase();
+      const pendingStr = localStorage.getItem('smasa_pending_approval_user');
+      const pendingUsers: string[] = pendingStr ? JSON.parse(pendingStr) : [];
+      if (!pendingUsers.includes(uName)) {
+        pendingUsers.push(uName);
+        localStorage.setItem('smasa_pending_approval_user', JSON.stringify(pendingUsers));
+      }
+    }
+
     setTeachers(updated);
     saveTeacherAccounts(updated);
     triggerAutoPush();
-    setSuccessMsg(`Pendaftaran guru "${name}" berhasil disetujui! Guru sekarang dapat masuk ke portal.`);
+    setSuccessMsg(`Pendaftaran guru "${name}" berhasil disetujui! Notifikasi persetujuan telah diaktifkan untuk akun tersebut.`);
     setTimeout(() => setSuccessMsg(''), 5000);
   };
 
@@ -675,13 +687,14 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                   teachers.map((t) => {
                     const spreadsheetStatus = getTeacherSpreadsheetStatus(t.username);
                     const studentCount = getTeacherStudentCount(t.username);
+                    const isApproved = t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1';
                     
                     return (
                       <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="py-4 px-5">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-bold text-slate-800">{t.nama}</span>
-                            {t.isApproved === false ? (
+                            {!isApproved ? (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-extrabold text-[9px] uppercase tracking-wider animate-pulse">
                                 Menunggu Persetujuan
                               </span>
@@ -727,7 +740,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                           {studentCount} Siswa
                         </td>
                         <td className="py-4 px-5 text-right space-x-2">
-                          {t.isApproved === false ? (
+                          {!isApproved ? (
                             <button
                               onClick={() => handleApproveTeacher(t.id, t.nama)}
                               className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[11px] inline-flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-sm shadow-emerald-100"
@@ -917,7 +930,12 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                   <div className="relative mt-2">
                     <pre className="bg-slate-900 text-slate-200 p-3 rounded-xl text-[9px] font-mono overflow-x-auto max-h-48 leading-relaxed">
 {`function doGet(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Guru");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    return ContentService.createTextOutput(JSON.stringify({status: "error", message: "Spreadsheet tidak ditemukan."}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  var sheet = ss.getSheetByName("Guru");
   if (!sheet) {
     return ContentService.createTextOutput(JSON.stringify({teachers: []}))
       .setMimeType(ContentService.MimeType.JSON);
@@ -934,19 +952,29 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   }
   var jsonArray = [];
   for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (!row || row.join("").trim() === "") continue;
+
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = data[i][j];
+      obj[headers[j]] = row[j];
     }
-    var rawApp = (obj.isapproved !== undefined && obj.isapproved !== "") ? obj.isapproved : ((obj.isApproved !== undefined && obj.isApproved !== "") ? obj.isApproved : "false");
+    var uName = String(obj.username || obj.Username || "").trim();
+    if (!uName) continue;
+
+    var isSeedAdmin = (uName.toLowerCase() === "romlah" || uName.toLowerCase() === "bambang");
+    var rawApp = (obj.isapproved !== undefined && obj.isapproved !== "") ? obj.isapproved :
+                 ((obj.isApproved !== undefined && obj.isApproved !== "") ? obj.isApproved :
+                 ((obj.approved !== undefined && obj.approved !== "") ? obj.approved : "false"));
+    
     var app = String(rawApp).toLowerCase().trim();
-    var isApp = (app === "true" || app === "1" || app === "yes");
+    var isApp = isSeedAdmin || (app === "true" || app === "1" || app === "yes" || app === "approved" || app === "setuju" || app === "ya");
 
     jsonArray.push({
       id: String(obj.id || ("T" + i)),
-      nama: String(obj.nama || ""),
-      username: String(obj.username || ""),
-      password: String(obj.password || ""),
+      nama: String(obj.nama || uName),
+      username: uName,
+      password: String(obj.password || "123456"),
       mataPelajaran: String(obj.matapelajaran || obj.mataPelajaran || "Informatika"),
       isApproved: isApp,
       asalSekolah: String(obj.asalsekolah || obj.asalSekolah || ""),
@@ -959,15 +987,22 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
 }
 
 function doPost(e) {
+  if (!e || !e.postData || !e.postData.contents) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: "Fungsi doPost() membutuhkan payload HTTP POST dari web app."
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
   var params = {};
   try {
     params = JSON.parse(e.postData.contents);
   } catch(err) {
     params = e.parameter || {};
   }
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Guru");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Guru");
   if (!sheet) {
-    sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
+    sheet = ss.insertSheet("Guru");
   }
   sheet.clear();
   var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email"];
@@ -977,19 +1012,30 @@ function doPost(e) {
     try { list = JSON.parse(list); } catch(err) {}
   }
   if (list && list.length > 0) {
+    var rows = [];
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
-      sheet.appendRow([
-        String(t.id || ""),
-        String(t.nama || ""),
-        String(t.username || ""),
-        String(t.password || ""),
+      var uName = String(t.username || t.Username || "").trim();
+      if (!uName) continue;
+      var isSeedAdmin = (uName.toLowerCase() === 'romlah' || uName.toLowerCase() === 'bambang');
+      var rawApp = t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : false);
+      var appStr = String(rawApp).toLowerCase().trim();
+      var isApp = isSeedAdmin || (rawApp === true || appStr === "true" || appStr === "1" || appStr === "yes" || appStr === "approved" || appStr === "setuju" || appStr === "ya");
+
+      rows.push([
+        String(t.id || ("T" + (i + 1))),
+        String(t.nama || uName),
+        uName,
+        String(t.password || "123456"),
         String(t.mataPelajaran || t.matapelajaran || "Informatika"),
-        t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : true),
+        isApp,
         String(t.asalSekolah || t.asalsekolah || ""),
         String(t.spreadsheetUrl || t.spreadsheeturl || ""),
         String(t.email || "")
       ]);
+    }
+    if (rows.length > 0) {
+      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     }
   }
   return ContentService.createTextOutput(JSON.stringify({status: "success", count: list ? list.length : 0}))
@@ -1068,7 +1114,7 @@ function doPost(e) {
         String(t.username || ""),
         String(t.password || ""),
         String(t.mataPelajaran || t.matapelajaran || "Informatika"),
-        t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : true),
+        ((String(t.username || '').toLowerCase() === 'romlah' || String(t.username || '').toLowerCase() === 'bambang') ? true : (t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : false))),
         String(t.asalSekolah || t.asalsekolah || ""),
         String(t.spreadsheetUrl || t.spreadsheeturl || ""),
         String(t.email || "")
