@@ -937,9 +937,7 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
         isApp = true;
       } else if (rawApp !== undefined && rawApp !== null && String(rawApp).trim() !== '') {
         const appVal = String(rawApp).toLowerCase().trim();
-        isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes' || appVal === 'approved' || appVal === 'setuju');
-      } else if (localMatch && localMatch.isApproved !== undefined) {
-        isApp = Boolean(localMatch.isApproved === true || String(localMatch.isApproved).toLowerCase().trim() === 'true');
+        isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes' || appVal === 'approved' || appVal === 'setuju' || appVal === 'ya');
       } else {
         isApp = false;
       }

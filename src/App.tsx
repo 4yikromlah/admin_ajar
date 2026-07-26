@@ -41,6 +41,7 @@ import {
   pushToGoogleSheets,
   pullFromGoogleSheets,
   saveTeacherAccounts,
+  loadTeacherAccounts,
   fetchSuperAdminSpreadsheetUrlFromServer,
   pullSuperAdminFromGoogleSheets,
   getGoogleAppsScriptUrl,
@@ -181,12 +182,14 @@ export default function App() {
     }
   };
 
-  // Sinkronisasi daftar guru dari spreadsheet pusat & data aplikasi pada saat mount
+  // Sinkronisasi daftar guru dari spreadsheet pusat & verifikasi persetujuan akun saat mount & periodik
   React.useEffect(() => {
     const syncTeacherListAndSettingsOnMount = async () => {
       try {
         await pullSuperAdminFromGoogleSheets();
         reloadAllStates();
+        validateTeacherSessionApproval();
+
         // Jika ada spreadsheet URL guru/siswa aktif, tarik data aplikasi terbaru secara otomatis
         const scriptUrl = getGoogleAppsScriptUrl();
         if (scriptUrl && navigator.onLine) {
@@ -207,6 +210,31 @@ export default function App() {
       }
     };
     syncTeacherListAndSettingsOnMount();
+
+    // Background interval: Verifikasi persetujuan akun secara berkala
+    const interval = setInterval(() => {
+      if (localStorage.getItem('isTeacherLoggedIn') === 'true') {
+        pullSuperAdminFromGoogleSheets().then(() => {
+          reloadAllStates();
+          validateTeacherSessionApproval();
+        });
+      }
+    }, 12000);
+
+    const handleFocus = () => {
+      if (localStorage.getItem('isTeacherLoggedIn') === 'true') {
+        pullSuperAdminFromGoogleSheets().then(() => {
+          reloadAllStates();
+          validateTeacherSessionApproval();
+        });
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   // Sinkronisasi otomatis saat aplikasi pertama kali dimuat
@@ -547,6 +575,48 @@ export default function App() {
     setTimeout(() => {
       reloadAllStates();
     }, 0);
+  };
+
+  const validateTeacherSessionApproval = (): boolean => {
+    const isTeacher = localStorage.getItem('isTeacherLoggedIn') === 'true';
+    if (!isTeacher) return true;
+
+    const loggedUsername = (localStorage.getItem('loggedTeacherUsername') || '').trim().toLowerCase();
+    if (!loggedUsername) {
+      handleTeacherLogout();
+      return false;
+    }
+
+    // Seed super admin accounts are always approved
+    if (loggedUsername === 'romlah' || loggedUsername === 'bambang' || loggedUsername === 'admin') {
+      return true;
+    }
+
+    const teachers = loadTeacherAccounts();
+    const myAccounts = teachers.filter(t => t.username.trim().toLowerCase() === loggedUsername);
+
+    if (myAccounts.length === 0) {
+      console.warn(`[Session Check] Akun guru "${loggedUsername}" tidak ditemukan di database pusat.`);
+      handleTeacherLogout();
+      return false;
+    }
+
+    const isApproved = myAccounts.every(t => {
+      const val = t.isApproved;
+      if (val === false || String(val).trim().toLowerCase() === 'false' || String(val).trim() === '0' || String(val).trim().toLowerCase() === 'no') {
+        return false;
+      }
+      return val === true || String(val).trim().toLowerCase() === 'true' || String(val).trim() === '1' || String(val).trim().toLowerCase() === 'yes';
+    });
+
+    if (!isApproved) {
+      console.warn(`[Session Check] Akun guru "${loggedUsername}" belum disetujui (isApproved = false). Menghentikan sesi...`);
+      alert(`⚠️ Akses Ditolak / Sesi Dihentikan: Akun Guru (@${loggedUsername}) Anda belum disetujui atau persetujuan telah dicabut oleh Super Admin. Silakan hubungi Super Admin.`);
+      handleTeacherLogout();
+      return false;
+    }
+
+    return true;
   };
 
   const handleSuperAdminLogout = () => {
