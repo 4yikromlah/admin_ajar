@@ -176,76 +176,85 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     }
 
     // 2. Check Teacher Accounts
-    const matchedTeacher = latestTeachers.find(
-      (t) => t.username.toLowerCase() === cleanUsername && t.password === guruPassword
+    const teacherByUsername = latestTeachers.find(
+      (t) => t.username.toLowerCase() === cleanUsername
     );
 
-      if (matchedTeacher) {
-        if (matchedTeacher.isApproved === false) {
-          setGuruError('Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Super Admin!');
-          setIsGuruLoading(false);
-          return;
-        }
-        localStorage.setItem('hasEverLoggedIn', 'true');
-        
-        const scopedKey = `smasa_${matchedTeacher.username}_settings`;
-        let tSettings = getTeacherSettings(matchedTeacher.username);
-        if (!tSettings) {
-          tSettings = {
-            namaGuru: matchedTeacher.nama,
-            nip: "",
-            namaKS: "",
-            jabatanKS: "",
-            nipKS: "",
-            kopPemprov: "PEMERINTAH PROVINSI",
-            kopDinas: "DINAS PENDIDIKAN",
-            kopSekolah: matchedTeacher.asalSekolah || "MGMP INFORMATIKA BONDOWOSO",
-            kopAlamat: "",
-            logoSekolah: "",
-            logoProv: "",
-            kkm: 75,
-            kota: "Salatiga",
-            tahunPelajaran: "2025/2026",
-            literasiStartAccess: "00:00",
-            literasiEndAccess: "23:59",
-            tugasStartAccess: "00:00",
-            tugasEndAccess: "23:59",
-            spreadsheetUrl: matchedTeacher.spreadsheetUrl || "",
-            adminUsername: matchedTeacher.username,
-            adminPassword: matchedTeacher.password || "password",
-            mataPelajaran: matchedTeacher.mataPelajaran || "Informatika"
-          };
-          localStorage.setItem(scopedKey, JSON.stringify(tSettings));
-        } else if (matchedTeacher.spreadsheetUrl && matchedTeacher.spreadsheetUrl !== tSettings.spreadsheetUrl) {
-          tSettings.spreadsheetUrl = matchedTeacher.spreadsheetUrl;
-          localStorage.setItem(scopedKey, JSON.stringify(tSettings));
-        }
-
-        const sName = tSettings?.kopSekolah || matchedTeacher.asalSekolah || 'MGMP INFORMATIKA BONDOWOSO';
-        const sLogo = tSettings?.logoSekolah || '';
-        const sMataPelajaran = tSettings?.mataPelajaran || matchedTeacher.mataPelajaran || 'Informatika';
-        const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-
-        localStorage.setItem('lastLoggedInSchoolName', sName);
-        localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
-        localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
-        localStorage.setItem('lastLoggedInTime', loginTime);
-        localStorage.setItem('lastLoggedInUserNama', matchedTeacher.nama);
-        localStorage.setItem('lastLoggedInRole', 'guru');
-
-        setLoginSuccessData({
-          role: 'guru',
-          nama: matchedTeacher.nama,
-          sekolah: sName,
-          logo: sLogo,
-          mataPelajaran: sMataPelajaran
-        });
-
-        setTimeout(() => {
-          onTeacherLoginSuccess(matchedTeacher.username);
-        }, 2200);
+    if (teacherByUsername) {
+      if (teacherByUsername.password !== guruPassword) {
+        setGuruError('Username atau Password Guru salah!');
+        setIsGuruLoading(false);
         return;
       }
+
+      const isApproved = teacherByUsername.isApproved === true || String(teacherByUsername.isApproved).toLowerCase() === 'true';
+      if (!isApproved) {
+        setGuruError('Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Super Admin!');
+        setIsGuruLoading(false);
+        return;
+      }
+
+      const matchedTeacher = teacherByUsername;
+      localStorage.setItem('hasEverLoggedIn', 'true');
+      
+      const scopedKey = `smasa_${matchedTeacher.username}_settings`;
+      let tSettings = getTeacherSettings(matchedTeacher.username);
+      if (!tSettings) {
+        tSettings = {
+          namaGuru: matchedTeacher.nama,
+          nip: "",
+          namaKS: "",
+          jabatanKS: "",
+          nipKS: "",
+          kopPemprov: "PEMERINTAH PROVINSI",
+          kopDinas: "DINAS PENDIDIKAN",
+          kopSekolah: matchedTeacher.asalSekolah || "MGMP INFORMATIKA BONDOWOSO",
+          kopAlamat: "",
+          logoSekolah: "",
+          logoProv: "",
+          kkm: 75,
+          kota: "Salatiga",
+          tahunPelajaran: "2025/2026",
+          literasiStartAccess: "00:00",
+          literasiEndAccess: "23:59",
+          tugasStartAccess: "00:00",
+          tugasEndAccess: "23:59",
+          spreadsheetUrl: matchedTeacher.spreadsheetUrl || "",
+          adminUsername: matchedTeacher.username,
+          adminPassword: matchedTeacher.password || "password",
+          mataPelajaran: matchedTeacher.mataPelajaran || "Informatika"
+        };
+        localStorage.setItem(scopedKey, JSON.stringify(tSettings));
+      } else if (matchedTeacher.spreadsheetUrl && matchedTeacher.spreadsheetUrl !== tSettings.spreadsheetUrl) {
+        tSettings.spreadsheetUrl = matchedTeacher.spreadsheetUrl;
+        localStorage.setItem(scopedKey, JSON.stringify(tSettings));
+      }
+
+      const sName = tSettings?.kopSekolah || matchedTeacher.asalSekolah || 'MGMP INFORMATIKA BONDOWOSO';
+      const sLogo = tSettings?.logoSekolah || '';
+      const sMataPelajaran = tSettings?.mataPelajaran || matchedTeacher.mataPelajaran || 'Informatika';
+      const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+
+      localStorage.setItem('lastLoggedInSchoolName', sName);
+      localStorage.setItem('lastLoggedInSchoolLogo', sLogo);
+      localStorage.setItem('lastLoggedInMataPelajaran', sMataPelajaran);
+      localStorage.setItem('lastLoggedInTime', loginTime);
+      localStorage.setItem('lastLoggedInUserNama', matchedTeacher.nama);
+      localStorage.setItem('lastLoggedInRole', 'guru');
+
+      setLoginSuccessData({
+        role: 'guru',
+        nama: matchedTeacher.nama,
+        sekolah: sName,
+        logo: sLogo,
+        mataPelajaran: sMataPelajaran
+      });
+
+      setTimeout(() => {
+        onTeacherLoginSuccess(matchedTeacher.username);
+      }, 2200);
+      return;
+    }
 
       // 3. Fallback to settings adminUsername and adminPassword
       const allowedUsername = (settings?.adminUsername || 'admin').trim().toLowerCase();

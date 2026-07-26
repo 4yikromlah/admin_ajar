@@ -932,7 +932,8 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     for (var j = 0; j < headers.length; j++) {
       obj[headers[j]] = data[i][j];
     }
-    var app = String(obj.isapproved || obj.isApproved || "true").toLowerCase();
+    var rawApp = (obj.isapproved !== undefined && obj.isapproved !== "") ? obj.isapproved : ((obj.isApproved !== undefined && obj.isApproved !== "") ? obj.isApproved : "false");
+    var app = String(rawApp).toLowerCase().trim();
     var isApp = (app === "true" || app === "1" || app === "yes");
 
     jsonArray.push({
@@ -1014,7 +1015,8 @@ function doPost(e) {
     for (var j = 0; j < headers.length; j++) {
       obj[headers[j]] = data[i][j];
     }
-    var app = String(obj.isapproved || obj.isApproved || "true").toLowerCase();
+    var rawApp = (obj.isapproved !== undefined && obj.isapproved !== "") ? obj.isapproved : ((obj.isApproved !== undefined && obj.isApproved !== "") ? obj.isApproved : "false");
+    var app = String(rawApp).toLowerCase().trim();
     var isApp = (app === "true" || app === "1" || app === "yes");
 
     jsonArray.push({

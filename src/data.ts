@@ -912,8 +912,16 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
       const tId = String(remoteT.id || remoteT.ID || `T${idx + 1}`);
       const localMatch = localTeachers.find(l => (uName && l.username.toLowerCase() === uName.toLowerCase()) || l.id === tId);
 
-      const appVal = String(remoteT.isApproved !== undefined ? remoteT.isApproved : (remoteT.isapproved !== undefined ? remoteT.isapproved : 'true')).toLowerCase();
-      const isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes');
+      const rawApp = remoteT.isApproved !== undefined ? remoteT.isApproved : remoteT.isapproved;
+      let isApp = false;
+      if (rawApp !== undefined && rawApp !== null && String(rawApp).trim() !== '') {
+        const appVal = String(rawApp).toLowerCase().trim();
+        isApp = (appVal === 'true' || appVal === '1' || appVal === 'yes');
+      } else if (localMatch && localMatch.isApproved !== undefined) {
+        isApp = Boolean(localMatch.isApproved === true || String(localMatch.isApproved).toLowerCase() === 'true');
+      } else {
+        isApp = (uName.toLowerCase() === 'romlah' || uName.toLowerCase() === 'bambang');
+      }
 
       return {
         id: tId,
