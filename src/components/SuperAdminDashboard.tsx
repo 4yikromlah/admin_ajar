@@ -39,6 +39,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<TeacherAccount | null>(null);
   const [teacherToDelete, setTeacherToDelete] = useState<TeacherAccount | null>(null);
+  const [filterTab, setFilterTab] = useState<'all' | 'pending' | 'approved'>('all');
 
   // Form states
   const [nama, setNama] = useState('');
@@ -146,6 +147,28 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       }
     };
     initSpreadsheetData();
+  }, []);
+
+  // Periodic background sync polling to catch new teacher registrations from other gadgets
+  React.useEffect(() => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const ok = await pullSuperAdminFromGoogleSheets();
+        if (ok) {
+          const loaded = loadTeacherAccounts();
+          setTeachers(loaded);
+        } else {
+          const res = await fetch('/api/teachers');
+          if (res.ok) {
+            const data = await res.json();
+            if (data && Array.isArray(data.teachers)) {
+              setTeachers(data.teachers);
+            }
+          }
+        }
+      } catch (err) {}
+    }, 10000);
+    return () => clearInterval(pollInterval);
   }, []);
 
   const handleSaveSpreadsheetUrl = async (e: React.FormEvent) => {
@@ -439,6 +462,21 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setTimeout(() => setSuccessMsg(''), 5000);
   };
 
+  const handleRejectTeacher = (id: string, name: string) => {
+    if (confirm(`Apakah Anda yakin ingin MENOLAK pendaftaran guru "${name}"? Pendaftaran akun ini akan ditolak & dihapus dari sistem.`)) {
+      const targetTeacher = teachers.find(t => t.id === id);
+      const updated = teachers.filter(t => t.id !== id);
+      setTeachers(updated);
+      saveTeacherAccounts(updated);
+      triggerAutoPush();
+
+      addSyncLog('PENDAFTARAN DITOLAK', `Pendaftaran guru "${name}" (@${targetTeacher?.username || ''}) DITOLAK & dihapus oleh Super Admin.`, 'warning', targetTeacher?.username);
+
+      setSuccessMsg(`Pendaftaran guru "${name}" berhasil DITOLAK.`);
+      setTimeout(() => setSuccessMsg(''), 5000);
+    }
+  };
+
   // Helper to check if teacher has set up a Google Spreadsheet URL
   const getTeacherSpreadsheetStatus = (usr: string) => {
     try {
@@ -518,8 +556,40 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
           )}
         </AnimatePresence>
 
+        {/* Pending Approval Alert Banner */}
+        {teachers.filter(t => !(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1')).length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-5 rounded-3xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black shrink-0 animate-bounce">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h4 className="font-black text-sm text-amber-900 flex items-center gap-2">
+                  <span>Pendaftaran Guru Baru Menunggu Persetujuan!</span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-600 text-white text-[10px] font-black uppercase tracking-wider">
+                    {teachers.filter(t => !(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1')).length} Guru
+                  </span>
+                </h4>
+                <p className="text-xs text-amber-800 font-medium mt-0.5">
+                  Terdapat {teachers.filter(t => !(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1')).length} pendaftaran akun guru baru dari gadget guru. Silakan klik tombol <strong>Setujui</strong> atau <strong>Tolak</strong> di bawah ini untuk memproses akses.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setFilterTab('pending')}
+              className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0 transition-all cursor-pointer shadow-sm active:scale-95"
+            >
+              Lihat Permintaan Approval ({teachers.filter(t => !(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1')).length})
+            </button>
+          </motion.div>
+        )}
+
         {/* Widgets / Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black">
               <Users size={22} />
@@ -527,6 +597,19 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Guru</span>
               <h3 className="text-2xl font-black text-slate-800">{teachers.length}</h3>
+            </div>
+          </div>
+
+          <div className={`bg-white p-6 rounded-3xl border shadow-sm flex items-center gap-4 ${teachers.filter(t => !(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1')).length > 0 ? 'border-amber-300 ring-2 ring-amber-400/20 bg-amber-50/20' : 'border-slate-100'}`}>
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${teachers.filter(t => !(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1')).length > 0 ? 'bg-amber-500 text-white animate-pulse' : 'bg-amber-50 text-amber-600'}`}>
+              <Clock size={22} />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span>Pending Approval</span>
+                {teachers.filter(t => !(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1')).length > 0 && <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>}
+              </span>
+              <h3 className="text-2xl font-black text-amber-600">{teachers.filter(t => !(t.username.toLowerCase() === 'romlah' || t.username.toLowerCase() === 'bambang' || t.username.toLowerCase() === 'admin' || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1')).length}</h3>
             </div>
           </div>
           
@@ -543,7 +626,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
           </div>
 
           <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-black">
               <BookOpen size={22} />
             </div>
             <div>

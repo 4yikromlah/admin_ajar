@@ -192,8 +192,8 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         setToastData({
           show: true,
           type: 'success',
-          title: '🎉 Status: DISETUJUI!',
-          message: `Selamat Bp/Ibu ${matched.nama}! Akun Anda (@${matched.username}) telah DISETUJUI oleh Super Admin. Silakan masukkan kata sandi Anda untuk masuk.`,
+          title: '🎉 Status: Akun Aktif & Disetujui!',
+          message: 'Akun Anda telah disetujui dan sekarang aktif. Anda sudah dapat login.',
           actionText: 'Login Sekarang',
           onAction: () => {
             setIsRegistering(false);
@@ -206,7 +206,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
         triggerBrowserNotification(
           'SI-AP SMASA: Akun Guru Disetujui!',
-          `Selamat ${matched.nama}, akun Anda (@${matched.username}) telah disetujui oleh Super Admin. Silakan login.`
+          `Akun Anda (${matched.nama}) telah disetujui dan sekarang aktif. Anda sudah dapat login.`
         );
 
         setIsRegistering(false);
@@ -217,7 +217,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
           show: true,
           type: 'info',
           title: '⏳ Status: Menunggu Persetujuan',
-          message: `Akun ${matched.nama} (@${matched.username}) masih dalam peninjauan (Belum Disetujui) oleh Super Admin. Notifikasi akan muncul otomatis begitu akun disetujui.`,
+          message: `Akun Anda (${matched.nama}) berhasil terdaftar, tetapi masih menunggu persetujuan Super Admin. Silakan coba login kembali setelah akun Anda disetujui.`,
           actionText: ('Notification' in window && Notification.permission !== 'granted') ? '🔔 Izinkan Notifikasi Browser' : undefined,
           onAction: () => {
             if ('Notification' in window) {
@@ -391,24 +391,26 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     if (matchedTeachers.length > 0) {
       const teacherByUsername = matchedTeachers[matchedTeachers.length - 1];
 
-      if (teacherByUsername.password !== guruPassword) {
-        setGuruError('Username atau Password Guru salah!');
+      const isSeedAdmin = cleanUsername === 'romlah' || cleanUsername === 'bambang';
+
+      const isApproved = isSeedAdmin || (
+        teacherByUsername.isApproved === true ||
+        String(teacherByUsername.isApproved).trim().toLowerCase() === 'true' ||
+        String(teacherByUsername.isApproved).trim() === '1' ||
+        String(teacherByUsername.isApproved).trim().toLowerCase() === 'yes' ||
+        String(teacherByUsername.isApproved).trim().toLowerCase() === 'ya'
+      );
+
+      // Check approval status FIRST before password verification
+      if (!isApproved) {
+        setGuruError('Akun Anda berhasil terdaftar, tetapi masih menunggu persetujuan Super Admin. Silakan coba login kembali setelah akun Anda disetujui.');
         setIsGuruLoading(false);
         return;
       }
 
-      const isSeedAdmin = cleanUsername === 'romlah' || cleanUsername === 'bambang';
-
-      const isApproved = isSeedAdmin || matchedTeachers.every(t => {
-        const val = t.isApproved;
-        if (val === false || String(val).trim().toLowerCase() === 'false' || String(val).trim() === '0' || String(val).trim().toLowerCase() === 'no') {
-          return false;
-        }
-        return val === true || String(val).trim().toLowerCase() === 'true' || String(val).trim() === '1' || String(val).trim().toLowerCase() === 'yes';
-      });
-
-      if (!isApproved) {
-        setGuruError('❌ Akses Ditolak: Pendaftaran akun Anda masih MENUNGGU PERSETUJUAN (Status: Belum Disetujui / Ditolak) dari Super Admin!');
+      // Check password after approval validation
+      if (teacherByUsername.password !== guruPassword) {
+        setGuruError('Username atau Password Guru salah!');
         setIsGuruLoading(false);
         return;
       }

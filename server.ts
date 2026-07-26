@@ -44,9 +44,75 @@ try {
   console.error('[Server] Failed to read CONFIG_FILE:', e);
 }
 
+// Server-side persistent Teachers Database
+const TEACHERS_FILE = path.join(process.cwd(), 'teachers_db.json');
+let serverTeachers: any[] = [
+  {
+    id: "T1",
+    nama: "4yik.romlah@gmail.com",
+    username: "romlah",
+    password: "password123",
+    mataPelajaran: "Informatika",
+    isApproved: true,
+    asalSekolah: "MGMP INFORMATIKA SMA BONDOWOSO",
+    email: "4yik.romlah@gmail.com",
+    lastSyncAt: "08:00:00"
+  },
+  {
+    id: "T2",
+    nama: "Bambang Kurniawan, S.Kom.",
+    username: "bambang",
+    password: "password123",
+    mataPelajaran: "Informatika",
+    isApproved: true,
+    asalSekolah: "SMA Negeri 1 Salatiga",
+    email: "bambang@gmail.com",
+    lastSyncAt: "08:00:00"
+  }
+];
+
+try {
+  if (fs.existsSync(TEACHERS_FILE)) {
+    const raw = fs.readFileSync(TEACHERS_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      serverTeachers = parsed;
+      console.log('[Server] Loaded teachers_db.json successfully:', serverTeachers.length, 'teachers.');
+    }
+  } else {
+    fs.writeFileSync(TEACHERS_FILE, JSON.stringify(serverTeachers, null, 2), 'utf-8');
+  }
+} catch (e) {
+  console.error('[Server] Failed to load/save TEACHERS_FILE:', e);
+}
+
 // ----------------------------------------------------------------------------
 // API ROUTES (Must be defined BEFORE Vite middleware)
 // ----------------------------------------------------------------------------
+app.get('/api/teachers', (req, res) => {
+  res.json({ status: 'success', teachers: serverTeachers });
+});
+
+app.post('/api/teachers', (req, res) => {
+  const { teachers } = req.body;
+  if (Array.isArray(teachers)) {
+    // Preserve approved status for seed admins
+    serverTeachers = teachers.map((t: any) => {
+      const u = String(t.username || '').trim().toLowerCase();
+      if (u === 'romlah' || u === 'bambang' || u === 'admin') {
+        return { ...t, isApproved: true };
+      }
+      return t;
+    });
+    try {
+      fs.writeFileSync(TEACHERS_FILE, JSON.stringify(serverTeachers, null, 2), 'utf-8');
+    } catch (e) {
+      console.error('[Server] Failed to write TEACHERS_FILE:', e);
+    }
+  }
+  res.json({ status: 'success', teachers: serverTeachers });
+});
+
 app.get('/api/superadmin-url', (req, res) => {
   res.json({ 
     url: spreadsheetUrl,
