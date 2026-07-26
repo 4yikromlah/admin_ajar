@@ -54,11 +54,16 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
           if (config.adminPassword) setAdminPasswordState(config.adminPassword);
           if (config.adminEmail) setAdminEmailState(config.adminEmail);
           
+          // Force clear stale local teacher cache so browser relies strictly on live spreadsheet database
+          localStorage.removeItem('smasa_teachers');
+
           const ok = await pullSuperAdminFromGoogleSheets();
           if (ok) {
             setTeachers(loadTeacherAccounts());
-            setSuccessMsg('Data konfigurasi & data guru terbaru berhasil disinkronkan dari Google Spreadsheet!');
+            setSuccessMsg('Data konfigurasi & data guru terbaru berhasil disinkronkan langsung dari Google Spreadsheet database!');
             setTimeout(() => setSuccessMsg(''), 4000);
+          } else {
+            setTeachers(loadTeacherAccounts());
           }
         }
       } catch (err) {
@@ -173,10 +178,11 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
     setErrorMsg('');
     setSuccessMsg('');
     try {
+      localStorage.removeItem('smasa_teachers');
       const ok = await pullSuperAdminFromGoogleSheets();
       if (ok) {
         setTeachers(loadTeacherAccounts());
-        setSuccessMsg('Berhasil mengunduh & menyinkronkan data guru dari Google Spreadsheet!');
+        setSuccessMsg('Berhasil mengunduh & menyinkronkan data guru langsung dari database Google Spreadsheet!');
       } else {
         setErrorMsg('Gagal mengunduh data dari Google Spreadsheet. Pastikan Spreadsheet Anda terisi data guru.');
       }

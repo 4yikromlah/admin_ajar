@@ -20,7 +20,10 @@ import {
   Square,
   Clock,
   Check,
-  UserX
+  UserX,
+  Eye,
+  X,
+  Maximize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Siswa, Presensi, AttendanceStatus } from '../types';
@@ -50,6 +53,7 @@ export default function KelolaPresensi({
 
   // Custom confirmation state for stopping the QR session
   const [showEndQrConfirm, setShowEndQrConfirm] = useState(false);
+  const [isQrZoomed, setIsQrZoomed] = useState(false);
 
   // QR Session states
   const [qrDuration, setQrDuration] = useState(10); // menit
@@ -423,14 +427,26 @@ export default function KelolaPresensi({
                     <img
                       src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=0f172a&data=${encodeURIComponent(JSON.stringify(qrActiveSession))}`}
                       alt="Presensi QR Code"
-                      className="w-48 h-48 rounded-2xl object-contain mix-blend-multiply"
+                      className="w-48 h-48 rounded-2xl object-contain mix-blend-multiply cursor-pointer hover:scale-105 transition-transform"
+                      onClick={() => setIsQrZoomed(true)}
                       referrerPolicy="no-referrer"
                     />
-                    <div className="absolute top-2 left-2 w-6 h-6 border-t-4 border-l-4 border-blue-600 rounded-tl-lg" />
-                    <div className="absolute top-2 right-2 w-6 h-6 border-t-4 border-r-4 border-blue-600 rounded-tr-lg" />
-                    <div className="absolute bottom-2 left-2 w-6 h-6 border-b-4 border-l-4 border-blue-600 rounded-bl-lg" />
-                    <div className="absolute bottom-2 right-2 w-6 h-6 border-b-4 border-r-4 border-blue-600 rounded-br-lg" />
-                    <div className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-blue-500 to-transparent top-4 animate-[bounce_3s_infinite] shadow-[0_0_8px_#2563eb]" />
+                    <div className="absolute top-2 left-2 w-6 h-6 border-t-4 border-l-4 border-blue-600 rounded-tl-lg pointer-events-none" />
+                    <div className="absolute top-2 right-2 w-6 h-6 border-t-4 border-r-4 border-blue-600 rounded-tr-lg pointer-events-none" />
+                    <div className="absolute bottom-2 left-2 w-6 h-6 border-b-4 border-l-4 border-blue-600 rounded-bl-lg pointer-events-none" />
+                    <div className="absolute bottom-2 right-2 w-6 h-6 border-b-4 border-r-4 border-blue-600 rounded-br-lg pointer-events-none" />
+                    <div className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-blue-500 to-transparent top-4 animate-[bounce_3s_infinite] shadow-[0_0_8px_#2563eb] pointer-events-none" />
+
+                    {/* Tombol Icon Mata untuk Zoom / Perbesar QR Code */}
+                    <button
+                      type="button"
+                      onClick={() => setIsQrZoomed(true)}
+                      title="Zoom / Perbesar QR Code"
+                      className="absolute bottom-3 right-3 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md transition-all hover:scale-110 flex items-center justify-center gap-1.5 cursor-pointer z-10 group/btn"
+                    >
+                      <Eye size={16} />
+                      <span className="text-[10px] font-bold hidden sm:inline">Zoom</span>
+                    </button>
                   </div>
 
                   <div className="w-full space-y-4">
@@ -792,6 +808,72 @@ export default function KelolaPresensi({
                   className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all cursor-pointer shadow-md shadow-rose-100"
                 >
                   Akhiri Sesi
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* QR Code Zoom Modal */}
+      <AnimatePresence>
+        {isQrZoomed && qrActiveSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsQrZoomed(false)}
+              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.85, opacity: 0, y: 20 }}
+              className="relative w-full max-w-md sm:max-w-lg bg-white p-6 sm:p-8 rounded-3xl shadow-2xl border border-slate-100 z-10 flex flex-col items-center text-center space-y-6"
+            >
+              <button
+                type="button"
+                onClick={() => setIsQrZoomed(false)}
+                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+
+              <div className="space-y-1">
+                <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5">
+                  <Maximize2 size={13} /> Zoom QR Code Proyektor
+                </span>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight mt-1">Kelas: {qrActiveSession.kelas}</h3>
+                <p className="text-xs text-slate-500">Tampilkan ke proyektor agar seluruh siswa dapat memindai dari jarak jauh.</p>
+              </div>
+
+              {/* High-res Large QR Image */}
+              <div className="relative p-6 rounded-3xl bg-slate-50 border border-slate-200 shadow-inner flex items-center justify-center w-72 h-72 sm:w-80 sm:h-80">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&color=0f172a&data=${encodeURIComponent(JSON.stringify(qrActiveSession))}`}
+                  alt="Presensi QR Code Large"
+                  className="w-64 h-64 sm:w-72 sm:h-72 rounded-2xl object-contain mix-blend-multiply"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute top-3 left-3 w-8 h-8 border-t-4 border-l-4 border-blue-600 rounded-tl-xl pointer-events-none" />
+                <div className="absolute top-3 right-3 w-8 h-8 border-t-4 border-r-4 border-blue-600 rounded-tr-xl pointer-events-none" />
+                <div className="absolute bottom-3 left-3 w-8 h-8 border-b-4 border-l-4 border-blue-600 rounded-bl-xl pointer-events-none" />
+                <div className="absolute bottom-3 right-3 w-8 h-8 border-b-4 border-r-4 border-blue-600 rounded-br-xl pointer-events-none" />
+                <div className="absolute left-6 right-6 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent top-6 animate-[bounce_3s_infinite] shadow-[0_0_12px_#2563eb] pointer-events-none" />
+              </div>
+
+              <div className="w-full space-y-3">
+                <div className="py-3 px-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col items-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Kode Token Alternatif</span>
+                  <span className="text-2xl font-black text-slate-800 tracking-widest font-mono mt-1 select-all">{qrActiveSession.token}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsQrZoomed(false)}
+                  className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-all cursor-pointer shadow-lg shadow-blue-200"
+                >
+                  Tutup Tampilan Perbesar
                 </button>
               </div>
             </motion.div>

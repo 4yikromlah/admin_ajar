@@ -279,7 +279,7 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
         db = await response.json();
       }
     } catch (directErr) {
-      console.error("[Google Sheets Sync Error] Direct pull failed:", directErr);
+      console.warn("[Google Sheets Sync] Direct pull unavailable or CORS restricted:", directErr);
     }
   }
 
@@ -851,7 +851,10 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
       body: JSON.stringify({ url, method: 'GET' }),
     });
     if (proxyRes.ok) {
-      db = await proxyRes.json();
+      const json = await proxyRes.json().catch(() => null);
+      if (json && !json.error && json.status !== 'error') {
+        db = json;
+      }
     }
   } catch (proxyErr) {
     console.warn("[Super Admin Sync] Server gas-proxy pull failed, trying fallback:", proxyErr);
@@ -862,7 +865,10 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
     try {
       const proxyRes = await fetch('/api/superadmin/pull');
       if (proxyRes.ok) {
-        db = await proxyRes.json();
+        const json = await proxyRes.json().catch(() => null);
+        if (json && !json.error && json.status !== 'error') {
+          db = json;
+        }
       }
     } catch (err) {}
   }
@@ -878,7 +884,7 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
         db = await response.json();
       }
     } catch (directErr) {
-      console.error("[Super Admin Sync] Direct pull failed:", directErr);
+      console.warn("[Super Admin Sync] Direct pull unavailable or CORS restricted:", directErr);
     }
   }
 
@@ -936,14 +942,7 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
       };
     }).filter((t: TeacherAccount) => t.username);
 
-    // Keep any local teachers not in remote list
-    localTeachers.forEach(localT => {
-      const exists = mergedTeachers.some((t: any) => t.username.toLowerCase() === localT.username.toLowerCase() || t.id === localT.id);
-      if (!exists) {
-        mergedTeachers.push(localT);
-      }
-    });
-
+    // Replace local browser storage completely with the remote spreadsheet database accounts
     saveTeacherAccounts(mergedTeachers, true);
     return true;
   }
