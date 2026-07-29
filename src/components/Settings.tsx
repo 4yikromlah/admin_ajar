@@ -170,12 +170,6 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
       return;
     }
 
-    const cleanUrl = spreadsheetUrl.trim();
-    if (cleanUrl && (cleanUrl.includes('docs.google.com/spreadsheets') || !cleanUrl.includes('script.google.com'))) {
-      setErrorMsg('Peringatan: URL Spreadsheet yang dimasukkan adalah URL Google Spreadsheet langsung. Silakan masukkan URL Aplikasi Web Google Apps Script hasil penyebaran (/exec) agar koneksi berhasil.');
-      return;
-    }
-
     onUpdateSettings({
       namaGuru,
       nip,
@@ -749,32 +743,28 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
             </p>
 
             <div className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
-                  <span>URL Web App Google Apps Script</span>
-                  <span className="text-rose-500 font-bold">*</span>
-                </label>
-                <input
-                  type="url"
-                  value={spreadsheetUrl}
-                  onChange={(e) => setSpreadsheetUrl(e.target.value)}
-                  className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-700 font-mono"
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  id="input-settings-spreadsheet-url"
-                />
-                {spreadsheetUrl.includes('docs.google.com/spreadsheets') && (
-                  <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-semibold flex items-start gap-2">
-                    <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong>Perhatian:</strong> URL yang Anda masukkan adalah URL Google Spreadsheet. Untuk sinkronisasi otomatis, Anda harus memasukkan <strong>URL Web App Google Apps Script</strong> (yang didapat dari menu <em>Ekstensi &gt; Apps Script &gt; Terapkan sebagai Aplikasi Web</em>, berawalan <code>https://script.google.com/macros/s/.../exec</code>).
-                    </div>
+              {/* Info Card Vercel Environment Variable */}
+              <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-emerald-900 text-xs uppercase tracking-wide">
+                    <Database size={16} className="text-emerald-600 shrink-0" />
+                    <span>Konfigurasi Terpusat Vercel Environment Variable</span>
                   </div>
-                )}
-                <p className="text-[10px] text-slate-400 mt-1 leading-normal">
-                  Masukkan URL Web App dari Apps Script Anda setelah dideploy. Biarkan kosong jika ingin menggunakan mode penyimpanan lokal offline-first.
+                  {spreadsheetUrl ? (
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] uppercase tracking-wider">
+                      Aktif (Terhubung)
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-full bg-amber-500 text-white font-extrabold text-[9px] uppercase tracking-wider">
+                      Belum Dikonfigurasi
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  Link Google Apps Script Web App kini dikonfigurasi secara otomatis melalui Environment Variable di Vercel (<code>SUPERADMIN_SPREADSHEET_URL</code> / <code>VITE_SUPERADMIN_SPREADSHEET_URL</code>). Anda tidak perlu mengisi link secara manual di aplikasi web.
                 </p>
 
-                <div className="flex flex-wrap items-center gap-2.5 mt-3">
+                <div className="flex flex-wrap items-center gap-2.5 pt-2">
                   <button
                     type="button"
                     onClick={handleManualPull}
@@ -797,8 +787,8 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
                 </div>
 
                 {manualSyncMsg && (
-                  <div className="mt-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
-                    <Check size={16} className="text-emerald-600 shrink-0" />
+                  <div className="mt-2 p-3 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-semibold flex items-center gap-2">
+                    <Check size={16} className="text-emerald-700 shrink-0" />
                     <span>{manualSyncMsg}</span>
                   </div>
                 )}

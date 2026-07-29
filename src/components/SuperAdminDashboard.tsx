@@ -1036,38 +1036,29 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
               {spreadsheetUrl ? (
                 <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[10px] uppercase flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Connected
+                  Terhubung via Vercel Env
                 </span>
               ) : (
                 <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-extrabold text-[10px] uppercase flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                  Lokal Browser
+                  Lokal / Offline
                 </span>
               )}
             </div>
 
-            {/* Form to configure the URL */}
-            <form onSubmit={handleSaveSpreadsheetUrl} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">URL Google Apps Script Web App</label>
-                <input
-                  type="url"
-                  required
-                  value={spreadsheetUrl}
-                  onChange={(e) => setSpreadsheetUrl(e.target.value)}
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-700 font-mono"
-                />
-                {spreadsheetUrl.includes('docs.google.com/spreadsheets') && (
-                  <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-semibold flex items-start gap-2">
-                    <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong>Perhatian:</strong> URL yang Anda masukkan adalah URL Google Spreadsheet. Gunakan <strong>URL Web App Google Apps Script</strong> (berawalan <code>https://script.google.com/macros/s/.../exec</code>) dari menu <em>Ekstensi &gt; Apps Script &gt; Deploy &gt; Penerapan Baru (Aplikasi Web, Akses: Siapa Saja)</em>.
-                    </div>
-                  </div>
-                )}
+            {/* Vercel Environment Variable Info Notice */}
+            <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100/80 space-y-1.5 text-xs text-indigo-950">
+              <div className="flex items-center gap-1.5 font-black text-indigo-900 text-[11px] uppercase tracking-wider">
+                <Database size={14} className="text-indigo-600 shrink-0" />
+                <span>Otomatis via Vercel Environment</span>
               </div>
+              <p className="text-[11px] leading-relaxed text-indigo-800">
+                URL Google Apps Script Web App sekarang dimuat secara otomatis dari Environment Variable Vercel (<code>SUPERADMIN_SPREADSHEET_URL</code>).
+              </p>
+            </div>
 
+            {/* Form to configure password and email */}
+            <form onSubmit={handleSaveSpreadsheetUrl} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Kata Sandi Super Admin</label>
                 <input
@@ -1096,7 +1087,7 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
                 type="submit"
                 className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
               >
-                Simpan Konfigurasi & Sandi
+                Simpan Sandi & Email Super Admin
               </button>
             </form>
 
