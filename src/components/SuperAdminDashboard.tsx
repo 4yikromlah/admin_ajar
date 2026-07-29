@@ -1232,12 +1232,17 @@ function doPost(e) {
     try { list = JSON.parse(list); } catch(err) {}
   }
   if (list && list.length > 0) {
+    var seenUsers = {};
     var rows = [];
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
       var uName = String(t.username || t.Username || "").trim();
       if (!uName) continue;
-      var isSeedAdmin = (uName.toLowerCase() === 'romlah' || uName.toLowerCase() === 'bambang');
+      var key = uName.toLowerCase();
+      if (seenUsers[key]) continue;
+      seenUsers[key] = true;
+
+      var isSeedAdmin = (key === 'romlah' || key === 'bambang');
       var rawApp = t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : false);
       var appStr = String(rawApp).toLowerCase().trim();
       var isApp = isSeedAdmin || (rawApp === true || appStr === "true" || appStr === "1" || appStr === "yes" || appStr === "approved" || appStr === "setuju" || appStr === "ya");
@@ -1258,7 +1263,7 @@ function doPost(e) {
       sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     }
   }
-  return ContentService.createTextOutput(JSON.stringify({status: "success", count: list ? list.length : 0}))
+  return ContentService.createTextOutput(JSON.stringify({status: "success", count: rows ? rows.length : 0}))
     .setMimeType(ContentService.MimeType.JSON);
 }`}
                     </pre>
@@ -1326,22 +1331,38 @@ function doPost(e) {
     try { list = JSON.parse(list); } catch(err) {}
   }
   if (list && list.length > 0) {
+    var seenUsers = {};
+    var rows = [];
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
-      sheet.appendRow([
-        String(t.id || ""),
-        String(t.nama || ""),
-        String(t.username || ""),
-        String(t.password || ""),
+      var uName = String(t.username || t.Username || "").trim();
+      if (!uName) continue;
+      var key = uName.toLowerCase();
+      if (seenUsers[key]) continue;
+      seenUsers[key] = true;
+
+      var isSeedAdmin = (key === 'romlah' || key === 'bambang');
+      var rawApp = t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : false);
+      var appStr = String(rawApp).toLowerCase().trim();
+      var isApp = isSeedAdmin || (rawApp === true || appStr === "true" || appStr === "1" || appStr === "yes" || appStr === "approved" || appStr === "setuju" || appStr === "ya");
+
+      rows.push([
+        String(t.id || ("T" + (i + 1))),
+        String(t.nama || uName),
+        uName,
+        String(t.password || "123456"),
         String(t.mataPelajaran || t.matapelajaran || "Informatika"),
-        ((String(t.username || '').toLowerCase() === 'romlah' || String(t.username || '').toLowerCase() === 'bambang') ? true : (t.isApproved !== undefined ? t.isApproved : (t.isapproved !== undefined ? t.isapproved : false))),
+        isApp,
         String(t.asalSekolah || t.asalsekolah || ""),
         String(t.spreadsheetUrl || t.spreadsheeturl || ""),
         String(t.email || "")
       ]);
     }
+    if (rows.length > 0) {
+      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    }
   }
-  return ContentService.createTextOutput(JSON.stringify({status: "success", count: list ? list.length : 0}))
+  return ContentService.createTextOutput(JSON.stringify({status: "success", count: rows ? rows.length : 0}))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
                         navigator.clipboard.writeText(code);
