@@ -116,7 +116,14 @@ export function getGoogleAppsScriptUrl(): string {
       const teachers = loadTeacherAccounts();
       const me = teachers.find(t => t.username.toLowerCase() === username.toLowerCase());
       if (me && me.spreadsheetUrl) {
-        return cleanGoogleAppsScriptUrl(me.spreadsheetUrl);
+        const cleanedUrl = cleanGoogleAppsScriptUrl(me.spreadsheetUrl);
+        // Sync back to local settings if missing
+        try {
+          const currentSettings = settingsStr ? JSON.parse(settingsStr) : DEFAULT_SETTINGS;
+          currentSettings.spreadsheetUrl = cleanedUrl;
+          localStorage.setItem(`${prefix}settings`, JSON.stringify(currentSettings));
+        } catch(e) {}
+        return cleanedUrl;
       }
     }
   } catch (e) {}
