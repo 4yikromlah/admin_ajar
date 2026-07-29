@@ -115,5 +115,6 @@ export interface TeacherAccount {
   spreadsheetUrl?: string;
   email?: string;
   lastSyncAt?: string;
+  jumlahSiswa?: number;
 }
 

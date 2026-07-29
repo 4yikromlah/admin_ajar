@@ -62,12 +62,15 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
     setManualSyncMsg('');
     setErrorMsg('');
     try {
+      const current = loadSettings();
+      saveSettings({ ...current, spreadsheetUrl: spreadsheetUrl.trim() }, true);
+
       const ok = await pullFromGoogleSheets();
       if (ok) {
-        setManualSyncMsg('Berhasil menarik data dari Spreadsheet! Data web sekarang 100% sama dengan Google Sheets.');
+        setManualSyncMsg('Berhasil menarik data dari Spreadsheet Guru! Data web sekarang 100% tersinkronkan dengan Google Sheets Anda.');
         if (onReloadAllStates) onReloadAllStates();
       } else {
-        setErrorMsg('Gagal menarik data dari Google Sheets. Pastikan URL Web App valid dan dapat diakses Siapa Saja.');
+        setErrorMsg('Gagal menarik data dari Google Sheets. Pastikan URL Web App Apps Script valid dan Akses di-set "Siapa saja" (Anyone).');
       }
     } catch (e: any) {
       setErrorMsg('Error saat menarik data: ' + (e.message || 'Gagal koneksi'));
@@ -85,11 +88,15 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
     setManualSyncMsg('');
     setErrorMsg('');
     try {
+      const current = loadSettings();
+      saveSettings({ ...current, spreadsheetUrl: spreadsheetUrl.trim() }, true);
+
       const ok = await pushToGoogleSheets();
       if (ok) {
-        setManualSyncMsg('Berhasil mengunggah seluruh data web ke Google Sheets!');
+        const siswaList = loadSiswa();
+        setManualSyncMsg(`Berhasil mengunggah seluruh data web ke Google Sheets Guru! (${siswaList.length} siswa beserta nilai, presensi, pembelajaran, pengumuman, dan pengaturan tersimpan di spreadsheet Anda).`);
       } else {
-        setErrorMsg('Gagal mengunggah data ke Google Sheets.');
+        setErrorMsg('Gagal mengunggah data ke Google Sheets Guru. Pastikan URL Web App Apps Script berakhiran /exec dan Akses di-set "Siapa saja" (Anyone).');
       }
     } catch (e: any) {
       setErrorMsg('Error saat mengunggah data: ' + (e.message || 'Gagal koneksi'));

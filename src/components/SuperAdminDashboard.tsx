@@ -1199,7 +1199,8 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       isApproved: isApp,
       asalSekolah: String(obj.asalsekolah || obj.asalSekolah || ""),
       spreadsheetUrl: String(obj.spreadsheeturl || obj.spreadsheetUrl || ""),
-      email: String(obj.email || "")
+      email: String(obj.email || ""),
+      jumlahSiswa: Number(obj.jumlahsiswa || obj.jumlahSiswa || 0)
     });
   }
   return ContentService.createTextOutput(JSON.stringify({teachers: jsonArray}))
@@ -1225,7 +1226,7 @@ function doPost(e) {
     sheet = ss.insertSheet("Guru");
   }
   sheet.clear();
-  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email"];
+  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email", "jumlahSiswa"];
   sheet.appendRow(headers);
   var list = params.teachers || params.Teachers || params.guru || params.Guru || params.data || [];
   if (typeof list === 'string') {
@@ -1256,7 +1257,8 @@ function doPost(e) {
         isApp,
         String(t.asalSekolah || t.asalsekolah || ""),
         String(t.spreadsheetUrl || t.spreadsheeturl || ""),
-        String(t.email || "")
+        String(t.email || ""),
+        Number(t.jumlahSiswa || 0)
       ]);
     }
     if (rows.length > 0) {
@@ -1305,7 +1307,8 @@ function doPost(e) {
       isApproved: isApp,
       asalSekolah: String(obj.asalsekolah || obj.asalSekolah || ""),
       spreadsheetUrl: String(obj.spreadsheeturl || obj.spreadsheetUrl || ""),
-      email: String(obj.email || "")
+      email: String(obj.email || ""),
+      jumlahSiswa: Number(obj.jumlahsiswa || obj.jumlahSiswa || 0)
     });
   }
   return ContentService.createTextOutput(JSON.stringify({teachers: jsonArray}))
@@ -1324,7 +1327,7 @@ function doPost(e) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Guru");
   }
   sheet.clear();
-  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email"];
+  var headers = ["id", "nama", "username", "password", "mataPelajaran", "isApproved", "asalSekolah", "spreadsheetUrl", "email", "jumlahSiswa"];
   sheet.appendRow(headers);
   var list = params.teachers || params.Teachers || params.guru || params.Guru || params.data || [];
   if (typeof list === 'string') {
@@ -1355,7 +1358,8 @@ function doPost(e) {
         isApp,
         String(t.asalSekolah || t.asalsekolah || ""),
         String(t.spreadsheetUrl || t.spreadsheeturl || ""),
-        String(t.email || "")
+        String(t.email || ""),
+        Number(t.jumlahSiswa || 0)
       ]);
     }
     if (rows.length > 0) {

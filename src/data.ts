@@ -168,6 +168,24 @@ export async function pushToGoogleSheets(): Promise<boolean> {
   const settings = loadSettings();
   const rangkuman = loadRangkuman();
 
+  // Sync active teacher's spreadsheetUrl & student count to teacher list
+  const username = getActiveTeacherUsername();
+  if (username) {
+    const teachers = loadTeacherAccounts();
+    const updated = teachers.map(t => {
+      if (t.username.toLowerCase() === username.toLowerCase()) {
+        return {
+          ...t,
+          spreadsheetUrl: url,
+          jumlahSiswa: siswa.length,
+          lastSyncAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        };
+      }
+      return t;
+    });
+    saveTeacherAccounts(updated, false); // Auto-push to SuperAdmin spreadsheet
+  }
+
   const db = {
     siswa,
     nilai,
@@ -768,15 +786,22 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
     const isSeedAdmin = key === 'romlah' || key === 'bambang' || key === 'admin';
     const isApp = isSeedAdmin || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1';
 
+    let jSiswa = t.jumlahSiswa;
+    if (jSiswa === undefined || jSiswa === null) {
+      const siswaList = getLocalStorageData<any>('smasa_' + key + '_siswa', SEED_SISWA);
+      jSiswa = Array.isArray(siswaList) ? siswaList.length : 0;
+    }
+
     if (!teacherMap.has(key)) {
-      teacherMap.set(key, { ...t, username: key, isApproved: isApp });
+      teacherMap.set(key, { ...t, username: key, isApproved: isApp, jumlahSiswa: Number(jSiswa || 0) });
     } else {
       const existing = teacherMap.get(key)!;
       teacherMap.set(key, {
         ...existing,
         ...t,
         username: key,
-        isApproved: isSeedAdmin || existing.isApproved || isApp
+        isApproved: isSeedAdmin || existing.isApproved || isApp,
+        jumlahSiswa: Number(jSiswa || existing.jumlahSiswa || 0)
       });
     }
   }
@@ -1036,7 +1061,8 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
           remoteT.lastSyncAt ?? remoteT.lastsyncat ?? remoteT.last_sync ?? remoteT.lastSync ?? remoteT.timestamp ?? localMatch?.lastSyncAt ?? new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         ),
         spreadsheetUrl: String(remoteT.spreadsheetUrl ?? remoteT.spreadsheeturl ?? remoteT.SpreadsheetUrl ?? localMatch?.spreadsheetUrl ?? ''),
-        email: String(remoteT.email ?? remoteT.Email ?? localMatch?.email ?? '')
+        email: String(remoteT.email ?? remoteT.Email ?? localMatch?.email ?? ''),
+        jumlahSiswa: Number(remoteT.jumlahSiswa ?? remoteT.jumlahsiswa ?? remoteT.JumlahSiswa ?? localMatch?.jumlahSiswa ?? 0)
       };
     }).filter((t: TeacherAccount) => t.username.trim().length > 0);
 
@@ -1057,7 +1083,8 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
           isApproved: existing.isApproved || t.isApproved, // True if ANY row is approved!
           asalSekolah: t.asalSekolah || existing.asalSekolah,
           spreadsheetUrl: t.spreadsheetUrl || existing.spreadsheetUrl,
-          email: t.email || existing.email
+          email: t.email || existing.email,
+          jumlahSiswa: Number(t.jumlahSiswa || existing.jumlahSiswa || 0)
         });
       }
     }
