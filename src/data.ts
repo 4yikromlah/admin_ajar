@@ -1056,6 +1056,28 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
   return false;
 }
 
+export async function fetchTeachersFromServer(): Promise<TeacherAccount[]> {
+  try {
+    // 1. First attempt to pull directly from Google Spreadsheet Super Admin
+    const pulled = await pullSuperAdminFromGoogleSheets();
+    if (pulled) {
+      return loadTeacherAccounts();
+    }
+    // 2. Fallback to /api/teachers endpoint on server
+    const res = await fetch('/api/teachers');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.teachers) && data.teachers.length > 0) {
+        saveTeacherAccounts(data.teachers, true);
+        return data.teachers;
+      }
+    }
+  } catch (e) {
+    console.warn('[fetchTeachersFromServer] Gagal mengambil data guru dari server/spreadsheet:', e);
+  }
+  return loadTeacherAccounts();
+}
+
 export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promise<{ success: boolean; pushedToSheets: boolean; message: string }> {
   // 1. Ambil URL Super Admin terbaru dari server
   const url = await fetchSuperAdminSpreadsheetUrlFromServer();
