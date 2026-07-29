@@ -681,7 +681,16 @@ export function restoreLocalDatabaseFromJSON(jsonString: string): boolean {
 // SUPER ADMIN SPREADSHEET INTEGRATION FUNCTIONS
 // ----------------------------------------------------------------------------
 export function getSuperAdminSpreadsheetUrl(): string {
-  return localStorage.getItem('smasa_superadmin_spreadsheet_url') || (import.meta as any).env?.VITE_SUPERADMIN_SPREADSHEET_URL || '';
+  const envUrl = 
+    (import.meta as any).env?.SUPERADMIN_SPREADSHEET_URL || 
+    (import.meta as any).env?.VITE_SUPERADMIN_SPREADSHEET_URL || 
+    (import.meta as any).env?.SPREADSHEET_URL || 
+    (typeof process !== 'undefined' && process?.env ? (process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL) : '') ||
+    '';
+
+  const localUrl = localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';
+
+  return cleanGoogleAppsScriptUrl(envUrl || localUrl);
 }
 
 export function saveSuperAdminSpreadsheetUrl(url: string) {
@@ -710,7 +719,9 @@ export async function fetchSuperAdminConfigFromServer(): Promise<{ url: string; 
 
 export async function fetchSuperAdminSpreadsheetUrlFromServer(): Promise<string> {
   const config = await fetchSuperAdminConfigFromServer();
-  return cleanGoogleAppsScriptUrl(config?.url || localStorage.getItem('smasa_superadmin_spreadsheet_url') || '');
+  const serverUrl = config?.url ? cleanGoogleAppsScriptUrl(config.url) : '';
+  const fallbackUrl = getSuperAdminSpreadsheetUrl();
+  return serverUrl || fallbackUrl;
 }
 
 export async function saveSuperAdminSpreadsheetUrlToServer(url: string, adminPassword?: string, adminEmail?: string): Promise<boolean> {

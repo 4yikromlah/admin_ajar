@@ -5,6 +5,11 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    envPrefix: ['VITE_', 'SUPERADMIN_', 'SPREADSHEET_'],
+    define: {
+      'process.env.SUPERADMIN_SPREADSHEET_URL': JSON.stringify(process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || ''),
+      'process.env.VITE_SUPERADMIN_SPREADSHEET_URL': JSON.stringify(process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || ''),
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
