@@ -7,7 +7,7 @@ import React, { useState, useRef } from 'react';
 import { Settings, Save, RotateCcw, Upload, Image, Trash2, Check, AlertCircle, Database, Copy, Download, UploadCloud, HardDrive } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings } from '../types';
-import { DEFAULT_SETTINGS, downloadLocalDatabaseBackup, restoreLocalDatabaseFromJSON, pullFromGoogleSheets, pushToGoogleSheets, fetchSuperAdminSpreadsheetUrlFromServer, getSuperAdminSpreadsheetUrl } from '../data';
+import { DEFAULT_SETTINGS, downloadLocalDatabaseBackup, restoreLocalDatabaseFromJSON, pullFromGoogleSheets, pushToGoogleSheets, fetchSuperAdminSpreadsheetUrlFromServer, getSuperAdminSpreadsheetUrl, loadSettings, saveSettings, loadSiswa } from '../data';
 
 interface SettingsProps {
   settings: AppSettings;

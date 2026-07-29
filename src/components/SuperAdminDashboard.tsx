@@ -242,21 +242,22 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   };
 
   const handlePushSuperAdmin = async () => {
-    if (!spreadsheetUrl) {
-      setErrorMsg('Masukkan URL Spreadsheet Super Admin terlebih dahulu!');
+    if (!spreadsheetUrl.trim()) {
+      setErrorMsg('Masukkan URL Web App Apps Script Super Admin terlebih dahulu!');
       return;
     }
     setIsSyncing(true);
     setErrorMsg('');
     setSuccessMsg('');
     try {
+      await saveSuperAdminSpreadsheetUrlToServer(spreadsheetUrl.trim(), adminPasswordState, adminEmailState);
       const ok = await pushSuperAdminToGoogleSheets();
       if (ok) {
         setSuccessMsg('Berhasil mengirimkan data guru ke Google Spreadsheet Super Admin!');
         addSyncLog('MANUAL PUSH SPREADSHEET', `Pengiriman manual: ${teachers.length} akun guru berhasil dipush ke Cloud Spreadsheet.`, 'success');
       } else {
-        setErrorMsg('Gagal mengirimkan data ke Google Spreadsheet. Silakan periksa URL & izin Web App Anda.');
-        addSyncLog('MANUAL PUSH GAGAL', 'Gagal mengirimkan data ke Cloud Spreadsheet.', 'warning');
+        setErrorMsg('Gagal mengirimkan data ke Google Spreadsheet Super Admin. Pastikan URL Apps Script berakhiran /exec dan Akses di-set "Siapa saja" (Anyone).');
+        addSyncLog('MANUAL PUSH GAGAL', 'Gagal mengirimkan data ke Cloud Spreadsheet. Periksa URL /exec dan izin Akses: Siapa Saja.', 'warning');
       }
     } catch (e: any) {
       setErrorMsg(`Gagal sinkronisasi: ${e?.message || e}`);
@@ -270,14 +271,15 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
   };
 
   const handlePullSuperAdmin = async () => {
-    if (!spreadsheetUrl) {
-      setErrorMsg('Masukkan URL Spreadsheet Super Admin terlebih dahulu!');
+    if (!spreadsheetUrl.trim()) {
+      setErrorMsg('Masukkan URL Web App Apps Script Super Admin terlebih dahulu!');
       return;
     }
     setIsSyncing(true);
     setErrorMsg('');
     setSuccessMsg('');
     try {
+      await saveSuperAdminSpreadsheetUrlToServer(spreadsheetUrl.trim(), adminPasswordState, adminEmailState);
       localStorage.removeItem('smasa_teachers');
       const ok = await pullSuperAdminFromGoogleSheets();
       if (ok) {
@@ -286,8 +288,8 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
         setSuccessMsg('Berhasil mengunduh & menyinkronkan data guru langsung dari database Google Spreadsheet!');
         addSyncLog('MANUAL PULL SPREADSHEET', `Tarik data manual: ${loaded.length} akun guru berhasil disinkronkan dari Cloud Database.`, 'success');
       } else {
-        setErrorMsg('Gagal mengunduh data dari Google Spreadsheet. Pastikan Spreadsheet Anda terisi data guru.');
-        addSyncLog('MANUAL PULL GAGAL', 'Gagal mengunduh data dari Cloud Spreadsheet.', 'warning');
+        setErrorMsg('Gagal mengunduh data dari Google Spreadsheet. Pastikan URL Web App Apps Script valid dan spreadsheet terisi data guru.');
+        addSyncLog('MANUAL PULL GAGAL', 'Gagal mengunduh data dari Cloud Spreadsheet. Periksa URL Apps Script.', 'warning');
       }
     } catch (e: any) {
       setErrorMsg(`Gagal mengambil data: ${e?.message || e}`);
