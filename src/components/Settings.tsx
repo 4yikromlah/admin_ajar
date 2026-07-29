@@ -7,7 +7,7 @@ import React, { useState, useRef } from 'react';
 import { Settings, Save, RotateCcw, Upload, Image, Trash2, Check, AlertCircle, Database, Copy, Download, UploadCloud, HardDrive } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings } from '../types';
-import { DEFAULT_SETTINGS, downloadLocalDatabaseBackup, restoreLocalDatabaseFromJSON, pullFromGoogleSheets, pushToGoogleSheets } from '../data';
+import { DEFAULT_SETTINGS, downloadLocalDatabaseBackup, restoreLocalDatabaseFromJSON, pullFromGoogleSheets, pushToGoogleSheets, fetchSuperAdminSpreadsheetUrlFromServer, getSuperAdminSpreadsheetUrl } from '../data';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -35,7 +35,13 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
   const [literasiEndAccess, setLiterasiEndAccess] = useState(settings.literasiEndAccess || '23:59');
   const [tugasStartAccess, setTugasStartAccess] = useState(settings.tugasStartAccess || '00:00');
   const [tugasEndAccess, setTugasEndAccess] = useState(settings.tugasEndAccess || '23:59');
-  const [spreadsheetUrl, setSpreadsheetUrl] = useState(settings.spreadsheetUrl || '');
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState(settings.spreadsheetUrl || getSuperAdminSpreadsheetUrl());
+
+  React.useEffect(() => {
+    fetchSuperAdminSpreadsheetUrlFromServer().then((url) => {
+      if (url) setSpreadsheetUrl(url);
+    });
+  }, []);
   const [adminUsername, setAdminUsername] = useState(settings.adminUsername || 'admin');
   const [adminPassword, setAdminPassword] = useState(settings.adminPassword || 'admin123');
   const [adminEmail, setAdminEmail] = useState(settings.adminEmail || '');

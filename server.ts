@@ -31,7 +31,9 @@ try {
   if (fs.existsSync(targetFile)) {
     const raw = fs.readFileSync(targetFile, 'utf-8');
     const parsed = JSON.parse(raw);
-    spreadsheetUrl = parsed.url || '';
+    if (parsed.url && parsed.url.trim()) {
+      spreadsheetUrl = parsed.url.trim();
+    }
     if (parsed.adminPassword) adminPassword = parsed.adminPassword;
     if (parsed.adminEmail) adminEmail = parsed.adminEmail;
     console.log('[Server] Loaded config successfully from', targetFile, '. URL:', spreadsheetUrl, 'Email:', adminEmail);
@@ -166,8 +168,9 @@ app.post('/api/teachers', async (req, res) => {
 });
 
 app.get('/api/superadmin-url', (req, res) => {
+  const activeUrl = spreadsheetUrl || process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || '';
   res.json({ 
-    url: spreadsheetUrl,
+    url: activeUrl,
     adminPassword,
     adminEmail
   });

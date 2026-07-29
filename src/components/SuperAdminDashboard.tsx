@@ -116,8 +116,10 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
       setIsSyncing(true);
       try {
         const config = await fetchSuperAdminConfigFromServer();
+        const activeUrl = config?.url || getSuperAdminSpreadsheetUrl();
+        if (activeUrl) setSpreadsheetUrl(activeUrl);
+
         if (config) {
-          if (config.url) setSpreadsheetUrl(config.url);
           if (config.adminPassword) setAdminPasswordState(config.adminPassword);
           if (config.adminEmail) setAdminEmailState(config.adminEmail);
           
