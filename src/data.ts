@@ -1060,49 +1060,60 @@ export async function registerTeacherAndSync(newTeacher: TeacherAccount): Promis
   // 1. Ambil URL Super Admin terbaru dari server
   const url = await fetchSuperAdminSpreadsheetUrlFromServer();
 
-  // 2. Jika ada URL, tarik data guru terbaru dari Google Spreadsheet terlebih dahulu agar data sinkron
-  if (url) {
-    await pullSuperAdminFromGoogleSheets().catch((err) => {
-      console.warn("[Register Teacher] Gagal pull data guru dari spreadsheet sebelum pendaftaran:", err);
-    });
+  if (!url) {
+    throw new Error('Database Spreadsheet Super Admin belum dikonfigurasi. Silakan hubungi Super Admin untuk menyetel URL Spreadsheet sebelum melakukan pendaftaran.');
   }
-  
+
+  // 2. Tarik data guru terbaru dari Google Spreadsheet Super Admin terlebih dahulu agar data ter-update
+  const pulled = await pullSuperAdminFromGoogleSheets().catch((err) => {
+    console.warn("[Register Teacher] Gagal pull data guru dari spreadsheet sebelum pendaftaran:", err);
+    return false;
+  });
+
   let currentTeachers = loadTeacherAccounts();
 
-  // 3. Validasi username unik
-  if (currentTeachers.some(t => t.username.toLowerCase() === newTeacher.username.toLowerCase())) {
-    throw new Error(`Username "${newTeacher.username}" sudah terdaftar di sistem.`);
+  // 3. Pastikan ID Guru Unik dan Cegah Duplikat (by ID and username)
+  const uniqueId = newTeacher.id && newTeacher.id.startsWith('GURU_')
+    ? newTeacher.id
+    : `GURU_${Date.now()}_${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+  const cleanUsername = newTeacher.username.trim().toLowerCase();
+
+  if (currentTeachers.some(t => t.username.trim().toLowerCase() === cleanUsername)) {
+    throw new Error(`Username "${newTeacher.username}" sudah terdaftar di database Spreadsheet Super Admin.`);
   }
 
-  // 4. Tambahkan guru baru ke daftar dengan timestamp sinkronisasi pendaftaran
+  if (currentTeachers.some(t => t.id === uniqueId)) {
+    throw new Error(`ID Guru "${uniqueId}" sudah digunakan. Silakan coba lagi.`);
+  }
+
+  // 4. Buat objek Guru baru dengan ID Unik & timestamp
   const formattedTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const teacherWithSync: TeacherAccount = {
     ...newTeacher,
+    id: uniqueId,
+    username: cleanUsername,
     lastSyncAt: newTeacher.lastSyncAt || formattedTime
   };
+
   const updated = [...currentTeachers, teacherWithSync];
 
-  // 5. Simpan ke local storage (pass true untuk skip auto-push agar di-push secara eksplisit dengan penanganan respon di bawah)
+  // Simpan sementara di cache
   saveTeacherAccounts(updated, true);
 
-  // 6. Dorong eksplisit ke Google Spreadsheet jika URL tersedia
-  let pushed = false;
-  if (url) {
-    pushed = await pushSuperAdminToGoogleSheets();
-    if (!pushed) {
-      console.warn("[Register Teacher] Pendaftaran guru tersimpan secara lokal, namun gagal terhubung ke Google Spreadsheet Super Admin.");
-    }
+  // 5. Wajib kirim dan verifikasi bahwa data benar-benar berhasil tersimpan ke Google Spreadsheet Super Admin
+  const pushed = await pushSuperAdminToGoogleSheets();
+
+  if (!pushed) {
+    // Jika koneksi/penyimpanan ke Spreadsheet gagal, batalkan klaim sukses
+    // Hapus data dari cache agar tidak tertinggal sebagai data lokal terpisah
+    const reverted = currentTeachers.filter(t => t.username.toLowerCase() !== cleanUsername && t.id !== uniqueId);
+    saveTeacherAccounts(reverted, true);
+
+    throw new Error('Gagal menyimpan pendaftaran ke database Google Spreadsheet Super Admin. Pastikan koneksi internet terhubung dan URL Apps Script Web App valid (Akses: Siapa saja).');
   }
 
-  let msg = 'Pendaftaran berhasil diajukan! Harap hubungi Super Admin untuk proses persetujuan (approval).';
-  if (url) {
-    if (pushed) {
-      msg = 'Pendaftaran berhasil diajukan & tersimpan di Google Spreadsheet Super Admin! Harap hubungi Super Admin untuk proses persetujuan (approval).';
-    } else {
-      msg = 'Pendaftaran tersimpan di sistem, namun gagal terhubung ke Google Spreadsheet Super Admin. Pastikan URL Apps Script Web App valid & diset "Akses: Siapa saja".';
-    }
-  }
-
-  return { success: true, pushedToSheets: pushed, message: msg };
+  const msg = 'Pendaftaran guru berhasil tersimpan di database Google Spreadsheet Super Admin! Harap hubungi Super Admin untuk proses persetujuan (approval).';
+  return { success: true, pushedToSheets: true, message: msg };
 }
 

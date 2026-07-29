@@ -89,11 +89,42 @@ try {
 // ----------------------------------------------------------------------------
 // API ROUTES (Must be defined BEFORE Vite middleware)
 // ----------------------------------------------------------------------------
-app.get('/api/teachers', (req, res) => {
+app.get('/api/teachers', async (req, res) => {
+  // Always attempt to pull fresh data from Google Spreadsheet Super Admin if configured
+  if (spreadsheetUrl) {
+    try {
+      let targetUrl = spreadsheetUrl.trim().replace(/^["']|["']$/g, '');
+      if (targetUrl.endsWith('/dev')) {
+        targetUrl = targetUrl.substring(0, targetUrl.length - 4) + '/exec';
+      }
+      const response = await fetch(targetUrl, { method: 'GET' });
+      if (response.ok) {
+        const text = await response.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {}
+        let remoteTeachers: any[] = [];
+        if (Array.isArray(data)) {
+          remoteTeachers = data;
+        } else if (data && typeof data === 'object') {
+          remoteTeachers = data.teachers || data.guru || data.data || data.Teachers || data.Guru || [];
+        }
+        if (Array.isArray(remoteTeachers) && remoteTeachers.length > 0) {
+          serverTeachers = remoteTeachers;
+          try {
+            fs.writeFileSync(TEACHERS_FILE, JSON.stringify(serverTeachers, null, 2), 'utf-8');
+          } catch (e) {}
+        }
+      }
+    } catch (err) {
+      console.warn('[Server GET /api/teachers] Spreadsheet pull failed:', err);
+    }
+  }
   res.json({ status: 'success', teachers: serverTeachers });
 });
 
-app.post('/api/teachers', (req, res) => {
+app.post('/api/teachers', async (req, res) => {
   const { teachers } = req.body;
   if (Array.isArray(teachers)) {
     // Preserve approved status for seed admins
@@ -108,6 +139,27 @@ app.post('/api/teachers', (req, res) => {
       fs.writeFileSync(TEACHERS_FILE, JSON.stringify(serverTeachers, null, 2), 'utf-8');
     } catch (e) {
       console.error('[Server] Failed to write TEACHERS_FILE:', e);
+    }
+
+    // Push to Google Spreadsheet Super Admin
+    if (spreadsheetUrl) {
+      try {
+        let targetUrl = spreadsheetUrl.trim().replace(/^["']|["']$/g, '');
+        if (targetUrl.endsWith('/dev')) {
+          targetUrl = targetUrl.substring(0, targetUrl.length - 4) + '/exec';
+        }
+        const pushRes = await fetch(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'saveTeachers', teachers: serverTeachers }),
+        });
+        if (!pushRes.ok) {
+          return res.status(500).json({ status: 'error', error: 'Gagal menyimpan data ke Google Spreadsheet Super Admin' });
+        }
+      } catch (err: any) {
+        console.error('[Server POST /api/teachers] Spreadsheet push failed:', err);
+        return res.status(500).json({ status: 'error', error: 'Gagal terhubung ke Google Spreadsheet Super Admin: ' + (err?.message || err) });
+      }
     }
   }
   res.json({ status: 'success', teachers: serverTeachers });

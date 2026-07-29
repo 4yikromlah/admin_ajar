@@ -536,7 +536,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
 
     try {
       const newTeacher: TeacherAccount = {
-        id: `T${Date.now()}`,
+        id: `GURU_${Date.now()}_${Math.random().toString(36).substring(2,6).toUpperCase()}`,
         nama: regNama.trim(),
         username: cleanUsername,
         password: regPassword,
