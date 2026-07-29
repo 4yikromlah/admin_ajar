@@ -140,7 +140,7 @@ export default function Dashboard({
               Selamat Datang, Bapak/Ibu Guru! 👋
             </h1>
             <p className="text-slate-600 mt-2 text-sm max-w-xl leading-relaxed">
-              Selamat datang di portal pembelajaran **{settings.kopSekolah || 'SMASA-Online'}**. Di sini Anda dapat memantau perkembangan siswa, mengelola kurikulum koding, dan menganalisis nilai harian {settings.mataPelajaran || 'Informatika'} secara real-time.
+              Selamat datang di portal pembelajaran **{settings.kopSekolah || 'SMASA-Online'}**. Di sini Anda dapat memantau perkembangan siswa, mengelola kurikulum dan menganalisis nilai harian {settings.mataPelajaran || 'Informatika'} secara real-time.
             </p>
             {localStorage.getItem('lastLoggedInTime') && (
               <div className="mt-4 flex flex-wrap items-center gap-2 bg-white/65 border border-white/40 py-2 px-3 rounded-xl text-slate-600 text-xs shadow-sm w-fit">
