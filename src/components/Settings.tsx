@@ -35,13 +35,7 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
   const [literasiEndAccess, setLiterasiEndAccess] = useState(settings.literasiEndAccess || '23:59');
   const [tugasStartAccess, setTugasStartAccess] = useState(settings.tugasStartAccess || '00:00');
   const [tugasEndAccess, setTugasEndAccess] = useState(settings.tugasEndAccess || '23:59');
-  const [spreadsheetUrl, setSpreadsheetUrl] = useState(settings.spreadsheetUrl || getSuperAdminSpreadsheetUrl());
-
-  React.useEffect(() => {
-    fetchSuperAdminSpreadsheetUrlFromServer().then((url) => {
-      if (url) setSpreadsheetUrl(url);
-    });
-  }, []);
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState(settings.spreadsheetUrl || '');
   const [adminUsername, setAdminUsername] = useState(settings.adminUsername || 'admin');
   const [adminPassword, setAdminPassword] = useState(settings.adminPassword || 'admin123');
   const [adminEmail, setAdminEmail] = useState(settings.adminEmail || '');
@@ -749,46 +743,60 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
             </p>
 
             <div className="space-y-4">
-              {/* Info Card Vercel Environment Variable */}
-              <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
+              {/* Menu Isian Link Apps Script Guru (Berdiri Sendiri) */}
+              <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 font-bold text-emerald-900 text-xs uppercase tracking-wide">
                     <Database size={16} className="text-emerald-600 shrink-0" />
-                    <span>Konfigurasi Terpusat Vercel Environment Variable</span>
+                    <span>Integrasi Spreadsheet Guru (Terpisah & Mandiri)</span>
                   </div>
-                  {spreadsheetUrl ? (
+                  {spreadsheetUrl.trim() ? (
                     <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] uppercase tracking-wider">
-                      Aktif (Terhubung)
+                      Terhubung (Spreadsheet Mandiri Aktif)
                     </span>
                   ) : (
                     <span className="px-2.5 py-1 rounded-full bg-amber-500 text-white font-extrabold text-[9px] uppercase tracking-wider">
-                      Belum Dikonfigurasi
+                      Belum Dihubungkan
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  Link Google Apps Script Web App kini dikonfigurasi secara otomatis melalui Environment Variable di Vercel (<code>SUPERADMIN_SPREADSHEET_URL</code> / <code>VITE_SUPERADMIN_SPREADSHEET_URL</code>). Anda tidak perlu mengisi link secara manual di aplikasi web.
-                </p>
 
-                <div className="flex flex-wrap items-center gap-2.5 pt-2">
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                    URL Web App Google Apps Script Guru
+                  </label>
+                  <input
+                    type="text"
+                    value={spreadsheetUrl}
+                    onChange={(e) => setSpreadsheetUrl(e.target.value)}
+                    placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                    className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-mono font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                    id="input-teacher-spreadsheet-url"
+                  />
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    Tempelkan Link Web App dari Google Apps Script spreadsheet pribadi Anda. Data <strong>Siswa, Nilai, Presensi, Pembelajaran, dan Pengumuman</strong> milik Anda akan tersimpan secara terpisah di Google Spreadsheet Anda sendiri (tidak bercampur dengan spreadsheet Super Admin).
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 pt-1">
                   <button
                     type="button"
                     onClick={handleManualPull}
-                    disabled={isManualPulling || isManualPushing}
+                    disabled={isManualPulling || isManualPushing || !spreadsheetUrl.trim()}
                     className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <Download size={14} className={isManualPulling ? "animate-spin" : ""} />
-                    {isManualPulling ? "Menarik Data dari Spreadsheet..." : "Tarik Data dari Spreadsheet (Timpa Web)"}
+                    {isManualPulling ? "Menarik Data dari Spreadsheet..." : "Tarik Data dari Spreadsheet Guru"}
                   </button>
 
                   <button
                     type="button"
                     onClick={handleManualPush}
-                    disabled={isManualPulling || isManualPushing}
+                    disabled={isManualPulling || isManualPushing || !spreadsheetUrl.trim()}
                     className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <UploadCloud size={14} className={isManualPushing ? "animate-spin" : ""} />
-                    {isManualPushing ? "Mengunggah Data ke Spreadsheet..." : "Unggah Data Web ke Spreadsheet (Timpa Spreadsheet)"}
+                    {isManualPushing ? "Mengunggah Data ke Spreadsheet..." : "Unggah Data Web ke Spreadsheet Guru"}
                   </button>
                 </div>
 
@@ -798,6 +806,17 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
                     <span>{manualSyncMsg}</span>
                   </div>
                 )}
+              </div>
+
+              {/* Solusi Masalah Data Ganda/Duplikat */}
+              <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 text-blue-900 text-xs space-y-1">
+                <span className="font-extrabold flex items-center gap-1 text-blue-800">
+                  <AlertCircle size={14} className="text-blue-600" />
+                  Penyebab & Solusi Data Ganda di Spreadsheet:
+                </span>
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  Data ganda terjadi jika script Google Apps Script sebelumnya menggunakan perintah <code>appendRow()</code> tanpa menghapus baris lama saat dilakukan penyimpan ulang (sync). Kode Apps Script terbaru di bawah ini secara otomatis menjalankan <code>sheet.clear()</code> sebelum menulis ulang data, sehingga data di spreadsheet selalu rapi, sinkron, dan <strong>bebas duplikat</strong>.
+                </p>
               </div>
 
               {/* Panduan Instalasi */}
