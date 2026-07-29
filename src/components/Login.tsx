@@ -244,19 +244,27 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     }
   };
 
+  const isPollingRef = React.useRef(false);
+
   // Background Auto-Polling for Candidates Approval State
   useEffect(() => {
     const checkPendingApprovals = async () => {
+      if (isPollingRef.current) return;
+      const pendingStr = localStorage.getItem('smasa_pending_approval_user');
+      if (!pendingStr) return;
+
+      let pendingUsers: string[] = [];
+      try {
+        pendingUsers = JSON.parse(pendingStr);
+      } catch (e) {}
+
+      if (!Array.isArray(pendingUsers) || pendingUsers.length === 0) return;
+
+      isPollingRef.current = true;
       try {
         await pullSuperAdminFromGoogleSheets();
         const updated = loadTeacherAccounts();
         setTeachersList(updated);
-
-        const pendingStr = localStorage.getItem('smasa_pending_approval_user');
-        if (!pendingStr) return;
-
-        const pendingUsers: string[] = JSON.parse(pendingStr);
-        if (!Array.isArray(pendingUsers) || pendingUsers.length === 0) return;
 
         const notifiedStr = localStorage.getItem('smasa_notified_approved_teachers') || '[]';
         const notifiedUsers: string[] = JSON.parse(notifiedStr);
@@ -302,11 +310,14 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
             }
           }
         }
-      } catch (err) {}
+      } catch (err) {
+      } finally {
+        isPollingRef.current = false;
+      }
     };
 
     checkPendingApprovals();
-    const interval = setInterval(checkPendingApprovals, 10000);
+    const interval = setInterval(checkPendingApprovals, 25000);
     return () => clearInterval(interval);
   }, []);
 

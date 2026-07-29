@@ -122,9 +122,6 @@ export default function SuperAdminDashboard({ onLogout, onImpersonateTeacher }: 
         if (config) {
           if (config.adminPassword) setAdminPasswordState(config.adminPassword);
           if (config.adminEmail) setAdminEmailState(config.adminEmail);
-          
-          // Force clear stale local teacher cache so browser relies strictly on live spreadsheet database
-          localStorage.removeItem('smasa_teachers');
 
           const ok = await pullSuperAdminFromGoogleSheets();
           if (ok) {

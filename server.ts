@@ -18,8 +18,10 @@ const FALLBACK_CONFIG_FILE = path.join(__dirnameSafe, 'spreadsheet_config.json')
 
 app.use(express.json());
 
+const DEFAULT_SUPERADMIN_SPREADSHEET_URL = 'https://script.google.com/macros/s/AKfycbzb1VFTuPrmr1UpRePoi2m3IIFNJKXsxsceDpgkbFm0lsw71BOMjrTeCWCZhQxio9hW/exec';
+
 // Load saved config on startup with environment variable fallbacks for Vercel & serverless environments
-let spreadsheetUrl = process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || '';
+let spreadsheetUrl = process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
 let adminPassword = process.env.SUPERADMIN_PASSWORD || 'sableng212';
 let adminEmail = process.env.SUPERADMIN_EMAIL || '4yik.romlah@gmail.com';
 
@@ -168,7 +170,7 @@ app.post('/api/teachers', async (req, res) => {
 });
 
 app.get('/api/superadmin-url', (req, res) => {
-  const activeUrl = spreadsheetUrl || process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || '';
+  const activeUrl = spreadsheetUrl || process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
   res.json({ 
     url: activeUrl,
     adminPassword,
@@ -178,11 +180,12 @@ app.get('/api/superadmin-url', (req, res) => {
 
 app.post('/api/gas-proxy', async (req, res) => {
   const { url, method, body } = req.body;
-  if (!url || typeof url !== 'string') {
+  const targetRaw = (url && typeof url === 'string' && url.trim()) ? url.trim() : (spreadsheetUrl || DEFAULT_SUPERADMIN_SPREADSHEET_URL);
+  if (!targetRaw) {
     return res.status(400).json({ status: 'error', error: 'URL Google Apps Script wajib disediakan' });
   }
 
-  let targetUrl = url.trim().replace(/^["']|["']$/g, '');
+  let targetUrl = targetRaw.replace(/^["']|["']$/g, '');
   if (targetUrl.endsWith('/dev')) {
     targetUrl = targetUrl.substring(0, targetUrl.length - 4) + '/exec';
   }
@@ -197,6 +200,7 @@ app.post('/api/gas-proxy', async (req, res) => {
   try {
     const fetchOptions: RequestInit = {
       method: method || 'GET',
+      signal: AbortSignal.timeout(7000),
     };
     if (method === 'POST' && body) {
       fetchOptions.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
@@ -229,16 +233,17 @@ app.post('/api/gas-proxy', async (req, res) => {
 });
 
 app.get('/api/superadmin/pull', async (req, res) => {
-  if (!spreadsheetUrl) {
+  const activeUrl = spreadsheetUrl || process.env.SUPERADMIN_SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
+  if (!activeUrl) {
     return res.status(400).json({ status: 'error', error: 'URL Spreadsheet Super Admin belum dikonfigurasi di server.' });
   }
-  let targetUrl = spreadsheetUrl.trim().replace(/^["']|["']$/g, '');
+  let targetUrl = activeUrl.trim().replace(/^["']|["']$/g, '');
   if (targetUrl.endsWith('/dev')) {
     targetUrl = targetUrl.substring(0, targetUrl.length - 4) + '/exec';
   }
 
   try {
-    const response = await fetch(targetUrl, { method: 'GET' });
+    const response = await fetch(targetUrl, { method: 'GET', signal: AbortSignal.timeout(7000) });
     if (!response.ok) {
       return res.status(500).json({ status: 'error', error: `Gagal terhubung ke Google Apps Script (${response.statusText})` });
     }
@@ -267,10 +272,11 @@ app.get('/api/superadmin/pull', async (req, res) => {
 });
 
 app.post('/api/superadmin/push', async (req, res) => {
-  if (!spreadsheetUrl) {
+  const activeUrl = spreadsheetUrl || process.env.SUPERADMIN_SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
+  if (!activeUrl) {
     return res.status(400).json({ status: 'error', error: 'URL Spreadsheet Super Admin belum dikonfigurasi di server.' });
   }
-  let targetUrl = spreadsheetUrl.trim().replace(/^["']|["']$/g, '');
+  let targetUrl = activeUrl.trim().replace(/^["']|["']$/g, '');
   if (targetUrl.endsWith('/dev')) {
     targetUrl = targetUrl.substring(0, targetUrl.length - 4) + '/exec';
   }
@@ -280,6 +286,7 @@ app.post('/api/superadmin/push', async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(7000),
     });
     const text = await response.text();
     let data;
@@ -307,12 +314,12 @@ app.post('/api/superadmin-url', (req, res) => {
     if (cleaned.endsWith('/dev')) {
       cleaned = cleaned.substring(0, cleaned.length - 4) + '/exec';
     }
-    spreadsheetUrl = cleaned;
+    spreadsheetUrl = cleaned || process.env.SUPERADMIN_SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
   }
-  if (newPassword !== undefined) {
+  if (newPassword !== undefined && newPassword.trim()) {
     adminPassword = newPassword.trim();
   }
-  if (newEmail !== undefined) {
+  if (newEmail !== undefined && newEmail.trim()) {
     adminEmail = newEmail.trim();
   }
 

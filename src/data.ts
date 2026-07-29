@@ -332,7 +332,7 @@ export async function fetchFromGoogleSheets(sheetName: string): Promise<any[]> {
     return [];
   }
   try {
-    const response = await fetch(`${url}?sheet=${sheetName}`);
+    const response = await fetch(`${url}?sheet=${sheetName}`, { signal: AbortSignal.timeout(6000) });
     if (!response.ok) throw new Error("Gagal mengambil data dari Google Sheets");
     return await response.json();
   } catch (error) {
@@ -351,7 +351,8 @@ export async function sendToGoogleSheets(sheetName: string, action: 'create' | '
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sheet: sheetName, action, data })
+      body: JSON.stringify({ sheet: sheetName, action, data }),
+      signal: AbortSignal.timeout(6000)
     });
     const result = await response.json();
     return result.status === "success";
@@ -680,6 +681,8 @@ export function restoreLocalDatabaseFromJSON(jsonString: string): boolean {
 // ----------------------------------------------------------------------------
 // SUPER ADMIN SPREADSHEET INTEGRATION FUNCTIONS
 // ----------------------------------------------------------------------------
+export const DEFAULT_SUPERADMIN_SPREADSHEET_URL = 'https://script.google.com/macros/s/AKfycbzb1VFTuPrmr1UpRePoi2m3IIFNJKXsxsceDpgkbFm0lsw71BOMjrTeCWCZhQxio9hW/exec';
+
 export function getSuperAdminSpreadsheetUrl(): string {
   const envUrl = 
     (import.meta as any).env?.SUPERADMIN_SPREADSHEET_URL || 
@@ -690,7 +693,7 @@ export function getSuperAdminSpreadsheetUrl(): string {
 
   const localUrl = localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';
 
-  return cleanGoogleAppsScriptUrl(envUrl || localUrl);
+  return cleanGoogleAppsScriptUrl(envUrl || localUrl || DEFAULT_SUPERADMIN_SPREADSHEET_URL);
 }
 
 export function saveSuperAdminSpreadsheetUrl(url: string) {
@@ -810,6 +813,7 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(db),
+      signal: AbortSignal.timeout(8000),
     });
     if (serverPushRes.ok) {
       const result = await serverPushRes.json().catch(() => null);
@@ -827,14 +831,12 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, method: 'POST', body: db }),
+      signal: AbortSignal.timeout(8000),
     });
     if (proxyRes.ok) {
       const result = await proxyRes.json().catch(() => null);
       if (isSuccessResponse(result, true)) {
         return true;
-      }
-      if (result && (result.error || result.status === 'error')) {
-        console.warn("[Super Admin Sync] Server gas-proxy error:", result.error || result.raw);
       }
     }
   } catch (proxyErr) {
@@ -848,6 +850,7 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
       mode: 'cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(db),
+      signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) return false;
     
@@ -880,6 +883,7 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, method: 'GET' }),
+      signal: AbortSignal.timeout(6000),
     });
     if (proxyRes.ok) {
       const json = await proxyRes.json().catch(() => null);
@@ -891,10 +895,10 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
     console.warn("[Super Admin Sync] Server gas-proxy pull failed, trying fallback:", proxyErr);
   }
 
-  // 2. Fallback to /api/superadmin/pull
+  // 2. Fallback to /api/superadmin/pull if gas-proxy returned null/error
   if (!db) {
     try {
-      const proxyRes = await fetch('/api/superadmin/pull');
+      const proxyRes = await fetch('/api/superadmin/pull', { signal: AbortSignal.timeout(6000) });
       if (proxyRes.ok) {
         const json = await proxyRes.json().catch(() => null);
         if (json && !json.error && json.status !== 'error') {
@@ -904,12 +908,13 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
     } catch (err) {}
   }
 
-  // 3. Fallback to direct client fetch if server proxy is unavailable
+  // 3. Fallback to direct client fetch if server proxies are unavailable
   if (!db) {
     try {
       const response = await fetch(url, {
         method: 'GET',
         mode: 'cors',
+        signal: AbortSignal.timeout(6000),
       });
       if (response.ok) {
         db = await response.json();
