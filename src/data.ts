@@ -169,10 +169,7 @@ export async function pushToGoogleSheets(): Promise<boolean> {
 
   const siswa = loadSiswa();
   const nilai = loadNilai();
-  // Hanya simpan Izin, Sakit, dan Alpa ke Spreadsheet
-  const presensi = loadPresensi().filter(
-    (p) => p.status && p.status !== 'Hadir' && (p.status === 'Izin' || p.status === 'Sakit' || p.status === 'Alfa' || (p.status as any) === 'Ijin' || (p.status as any) === 'Alpa')
-  );
+  const presensi = loadPresensi();
   const pembelajaran = loadPembelajaran();
   const pengumuman = loadPengumuman();
   const settings = loadSettings();

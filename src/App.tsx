@@ -138,47 +138,67 @@ export default function App() {
     }
   };
 
-  const syncPush = async () => {
-    if (!settings.spreadsheetUrl || !navigator.onLine) return;
+  const syncPush = async (): Promise<boolean> => {
+    if (!settings.spreadsheetUrl) return true;
+    if (!navigator.onLine) {
+      setSyncError("Perangkat offline. Gagal menyimpan ke Google Spreadsheet pusat.");
+      return false;
+    }
     setIsSyncing(true);
     setSyncError(null);
     try {
-      await pushToGoogleSheets();
-      const now = new Date();
-      setLastSyncTime(now);
-      localStorage.setItem('smasa_last_sync_time', now.toISOString());
+      const ok = await pushToGoogleSheets();
+      if (ok) {
+        const now = new Date();
+        setLastSyncTime(now);
+        localStorage.setItem('smasa_last_sync_time', now.toISOString());
+        setSyncError(null);
+        return true;
+      } else {
+        setSyncError("Gagal menyimpan ke Google Spreadsheet pusat. Periksa koneksi internet atau validitas Web App Apps Script.");
+        return false;
+      }
     } catch (e: any) {
       console.error("Gagal sinkron otomatis ke Google Sheets:", e);
       setSyncError("Gagal menyimpan ke Google Sheets");
+      return false;
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const handleUpdateSettings = async (updated: AppSettings) => {
+  const handleUpdateSettings = async (updated: AppSettings): Promise<boolean> => {
     const oldUrl = settings.spreadsheetUrl || '';
     const newUrl = updated.spreadsheetUrl || '';
     
     setSettings(updated);
     saveSettings(updated);
 
-    if (newUrl && newUrl !== oldUrl) {
+    if (newUrl) {
       setIsSyncing(true);
       try {
-        await pushToGoogleSheets();
-        const now = new Date();
-        setLastSyncTime(now);
-        localStorage.setItem('smasa_last_sync_time', now.toISOString());
-        setSyncError(null);
-        alert("Koneksi Spreadsheet Berhasil! Seluruh data lokal Anda telah berhasil diunggah ke Google Sheet.");
+        const ok = await pushToGoogleSheets();
+        if (ok) {
+          const now = new Date();
+          setLastSyncTime(now);
+          localStorage.setItem('smasa_last_sync_time', now.toISOString());
+          setSyncError(null);
+          if (newUrl !== oldUrl) {
+            alert("Koneksi Spreadsheet Berhasil! Seluruh data Anda telah berhasil diunggah ke Google Sheet.");
+          }
+          return true;
+        } else {
+          setSyncError("Gagal terhubung ke URL Spreadsheet");
+          return false;
+        }
       } catch (e: any) {
         setSyncError("Gagal terhubung ke URL Spreadsheet");
-        alert("Gagal mengunggah data ke Spreadsheet. Pastikan URL Apps Script benar dan diatur agar memiliki akses 'Siapa saja'.");
+        return false;
       } finally {
         setIsSyncing(false);
       }
     } else {
-      syncPush();
+      return await syncPush();
     }
   };
 

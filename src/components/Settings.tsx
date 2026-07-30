@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS, downloadLocalDatabaseBackup, restoreLocalDatabaseFrom
 
 interface SettingsProps {
   settings: AppSettings;
-  onUpdateSettings: (s: AppSettings) => void;
+  onUpdateSettings: (s: AppSettings) => Promise<boolean | void> | void;
   onReloadAllStates?: () => void;
 }
 
@@ -234,14 +234,19 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg('');
+    setSavedSuccess(false);
+
     if (kkm < 0 || kkm > 100) {
       setErrorMsg('KKM harus bernilai antara 0 sampai 100!');
       return;
     }
 
-    onUpdateSettings({
+    const updatedData: AppSettings = {
       namaGuru,
       nip,
       namaKS,
@@ -265,10 +270,22 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
       adminPassword,
       adminEmail,
       mataPelajaran,
-    });
+    };
 
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setIsSaving(true);
+    try {
+      const res = await onUpdateSettings(updatedData);
+      if (res === false) {
+        setErrorMsg('Gagal menyimpan ke Google Spreadsheet pusat! Periksa koneksi internet Anda atau pastikan URL Web App Apps Script berakhiran /exec dan di-set akses "Siapa Saja" (Anyone).');
+      } else {
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 4000);
+      }
+    } catch (err: any) {
+      setErrorMsg('Gagal menyimpan data: ' + (err?.message || 'Error koneksi'));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleResetDefaults = () => {
@@ -1221,11 +1238,14 @@ function doPost(e) {
 
             <button
               type="submit"
-              className="neu-flat-sm px-5 py-3 rounded-xl bg-blue-50 text-blue-700 font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95"
+              disabled={isSaving}
+              className={`neu-flat-sm px-5 py-3 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer transition-all active:scale-95 ${
+                isSaving ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+              }`}
               id="btn-settings-save"
             >
-              <Save size={14} className="text-blue-700" />
-              <span>Simpan & Sinkronkan</span>
+              <Save size={14} className={isSaving ? "animate-spin text-slate-400" : "text-blue-700"} />
+              <span>{isSaving ? 'Menyimpan ke Google Sheets...' : 'Simpan & Sinkronkan'}</span>
             </button>
           </div>
         </div>
