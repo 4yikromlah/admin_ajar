@@ -37,6 +37,7 @@ export default function KelolaSiswa({
   const [nis, setNis] = useState('');
   const [nama, setNama] = useState('');
   const [kelas, setKelas] = useState('XI-MIPA-1');
+  const [isCustomKelas, setIsCustomKelas] = useState(false);
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -46,6 +47,23 @@ export default function KelolaSiswa({
   const [importPreview, setImportPreview] = useState<Siswa[]>([]);
   const [importError, setImportError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Dynamic class options derived from imported siswa, default list, and current state
+  const defaultClasses = [
+    'XI-MIPA-1', 'XI-MIPA-2', 'XI-IPS-1', 'XI-IPS-2',
+    'X-1', 'X-2', 'X-3', 'X-4', 'X-5',
+    'XI-1', 'XI-2', 'XI-3', 'XI-4', 'XI-5',
+    'XII-1', 'XII-2', 'XII-3', 'XII-4', 'XII-5'
+  ];
+
+  const availableClasses = Array.from(
+    new Set([
+      ...defaultClasses,
+      ...siswaList.map(s => s.kelas).filter(Boolean),
+      ...(importPreview ? importPreview.map(s => s.kelas).filter(Boolean) : []),
+      ...(kelas ? [kelas] : [])
+    ])
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
   // State Delete Confirmation
   const [siswaToDelete, setSiswaToDelete] = useState<Siswa | null>(null);
@@ -61,14 +79,15 @@ export default function KelolaSiswa({
   });
 
   // Ambil daftar kelas unik untuk filter dropdown
-  const uniqueKelasList = Array.from(new Set(siswaList.map((s) => s.kelas)));
+  const uniqueKelasList = Array.from(new Set(siswaList.map((s) => s.kelas).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
   // Buka Form Tambah
   const handleOpenAdd = () => {
     setSelectedSiswa(null);
     setNis('');
     setNama('');
-    setKelas('XI-MIPA-1');
+    setKelas(availableClasses[0] || 'XI-MIPA-1');
+    setIsCustomKelas(false);
     setEmail('');
     setUsername('');
     setPassword('');
@@ -80,7 +99,8 @@ export default function KelolaSiswa({
     setSelectedSiswa(siswa);
     setNis(siswa.nis);
     setNama(siswa.nama);
-    setKelas(siswa.kelas);
+    setKelas(siswa.kelas || 'XI-MIPA-1');
+    setIsCustomKelas(Boolean(siswa.kelas && !availableClasses.includes(siswa.kelas)));
     setEmail(siswa.email);
     setUsername(siswa.username || siswa.nis);
     setPassword(siswa.password || 'smasa123');
@@ -184,35 +204,52 @@ export default function KelolaSiswa({
           throw new Error("Format salah. Harus memiliki minimal header kolom dan satu baris data.");
         }
 
-        const headerRow = lines[0].split(',').map(h => h.trim().toLowerCase());
-        const nisIdx = headerRow.indexOf('nisn') !== -1 ? headerRow.indexOf('nisn') : headerRow.indexOf('nis');
-        const namaIdx = headerRow.indexOf('nama');
-        const kelasIdx = headerRow.indexOf('kelas');
-        const emailIdx = headerRow.indexOf('email');
-        const usernameIdx = headerRow.indexOf('username');
-        const passwordIdx = headerRow.indexOf('password');
+        const firstLine = lines[0];
+        const delimiter = firstLine.includes(';') ? ';' : (firstLine.includes('\t') ? '\t' : ',');
+        const headerRow = firstLine.split(delimiter).map(h => h.trim().toLowerCase().replace(/^["']|["']$/g, ''));
+        
+        const findHeaderIndex = (possibleNames: string[]) => {
+          for (const name of possibleNames) {
+            const idx = headerRow.findIndex(h => h === name || h.includes(name));
+            if (idx !== -1) return idx;
+          }
+          return -1;
+        };
 
-        if (nisIdx === -1 || namaIdx === -1 || kelasIdx === -1 || emailIdx === -1) {
-          throw new Error("Header kolom tidak lengkap! Pastikan mengandung kolom: nisn, nama, kelas, email.");
+        const nisIdx = findHeaderIndex(['nisn', 'nis', 'no_induk', 'id_siswa', 'nomor_induk', 'id']);
+        const namaIdx = findHeaderIndex(['nama', 'nama_siswa', 'name', 'full_name', 'nama_lengkap']);
+        const kelasIdx = findHeaderIndex(['kelas', 'class', 'nama_kelas', 'rombel', 'rombongan']);
+        const emailIdx = findHeaderIndex(['email', 'alamat_email', 'mail']);
+        const usernameIdx = findHeaderIndex(['username', 'user', 'user_name']);
+        const passwordIdx = findHeaderIndex(['password', 'pass', 'sandi', 'pin']);
+
+        if (namaIdx === -1 && nisIdx === -1) {
+          throw new Error("Header kolom tidak lengkap! Pastikan mengandung kolom: nis (atau nisn) dan nama.");
         }
 
         const parsedList: Siswa[] = [];
+        const splitRegex = delimiter === ';' 
+          ? /;(?=(?:(?:[^"]*"){2})*[^"]*$)/ 
+          : (delimiter === '\t' ? /\t(?=(?:(?:[^"]*"){2})*[^"]*$)/ : /,(?=(?:(?:[^"]*"){2})*[^`]*$)/);
+
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue; // Lewati baris kosong
 
-          // Regex untuk menangani koma dalam tanda kutip jika ada
-          const columns = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/^"|"$/g, '').trim());
-          
-          if (columns.length < 4) continue; // Lewati baris tidak valid
+          const columns = line.split(splitRegex).map(col => col.replace(/^"|"$/g, '').trim());
+          if (columns.length < 2) continue;
 
-          const calculatedNis = columns[nisIdx];
+          const calculatedNis = (nisIdx !== -1 && columns[nisIdx]) ? columns[nisIdx] : `100${i}`;
+          const calculatedNama = (namaIdx !== -1 && columns[namaIdx]) ? columns[namaIdx] : `Siswa ${i}`;
+          const calculatedKelas = (kelasIdx !== -1 && columns[kelasIdx]) ? columns[kelasIdx] : 'XI-MIPA-1';
+          const calculatedEmail = (emailIdx !== -1 && columns[emailIdx]) ? columns[emailIdx] : `${calculatedNis}@smasa.sch.id`;
+
           parsedList.push({
             id: `S${Date.now()}_I${i}`,
             nis: calculatedNis,
-            nama: columns[namaIdx],
-            kelas: columns[kelasIdx],
-            email: columns[emailIdx],
+            nama: calculatedNama,
+            kelas: calculatedKelas,
+            email: calculatedEmail,
             username: usernameIdx !== -1 && columns[usernameIdx] ? columns[usernameIdx] : calculatedNis,
             password: passwordIdx !== -1 && columns[passwordIdx] ? columns[passwordIdx] : 'smasa123'
           });
@@ -449,19 +486,47 @@ export default function KelolaSiswa({
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wider block mb-1.5">
-                      Kelas
-                    </label>
-                    <select
-                      value={kelas}
-                      onChange={(e) => setKelas(e.target.value)}
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none"
-                    >
-                      <option value="XI-MIPA-1">XI-MIPA-1</option>
-                      <option value="XI-MIPA-2">XI-MIPA-2</option>
-                      <option value="XI-IPS-1">XI-IPS-1</option>
-                      <option value="XI-IPS-2">XI-IPS-2</option>
-                    </select>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">
+                        Kelas
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomKelas(!isCustomKelas)}
+                        className="text-[10px] text-blue-600 hover:underline font-bold"
+                      >
+                        {isCustomKelas ? 'Pilih dari daftar' : '+ Tulis Kelas Kustom'}
+                      </button>
+                    </div>
+                    {isCustomKelas ? (
+                      <input
+                        type="text"
+                        required
+                        placeholder="Contoh: XI-F-1 atau X-1"
+                        value={kelas}
+                        onChange={(e) => setKelas(e.target.value)}
+                        className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                      />
+                    ) : (
+                      <select
+                        value={kelas}
+                        onChange={(e) => {
+                          if (e.target.value === '__CUSTOM__') {
+                            setIsCustomKelas(true);
+                          } else {
+                            setKelas(e.target.value);
+                          }
+                        }}
+                        className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                      >
+                        {availableClasses.map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ))}
+                        <option value="__CUSTOM__">+ Tulis Kelas Baru / Kustom...</option>
+                      </select>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wider block mb-1.5">

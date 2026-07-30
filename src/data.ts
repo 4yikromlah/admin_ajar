@@ -169,7 +169,10 @@ export async function pushToGoogleSheets(): Promise<boolean> {
 
   const siswa = loadSiswa();
   const nilai = loadNilai();
-  const presensi = loadPresensi();
+  // Hanya simpan Izin, Sakit, dan Alpa ke Spreadsheet
+  const presensi = loadPresensi().filter(
+    (p) => p.status && p.status !== 'Hadir' && (p.status === 'Izin' || p.status === 'Sakit' || p.status === 'Alfa' || (p.status as any) === 'Ijin' || (p.status as any) === 'Alpa')
+  );
   const pembelajaran = loadPembelajaran();
   const pengumuman = loadPengumuman();
   const settings = loadSettings();
@@ -190,7 +193,8 @@ export async function pushToGoogleSheets(): Promise<boolean> {
       }
       return t;
     });
-    saveTeacherAccounts(updated, false); // Auto-push to SuperAdmin spreadsheet
+    saveTeacherAccounts(updated, true); // Save to local teachers cache
+    pushSuperAdminToGoogleSheets().catch(e => console.warn('[Super Admin Push Error]', e));
   }
 
   const db = {
@@ -262,6 +266,158 @@ function getCaseInsensitiveProp(obj: any, targetKeys: string[]): any {
   return undefined;
 }
 
+function extractEntityArray(db: any, targetKeys: string[]): any[] | null {
+  if (!db || typeof db !== 'object') return null;
+  
+  // Direct property check
+  const direct = getCaseInsensitiveProp(db, targetKeys);
+  if (Array.isArray(direct)) return direct;
+  
+  // Check nested containers (data, result, records, payload, items)
+  const containers = ['data', 'result', 'records', 'payload', 'items', 'list'];
+  for (const c of containers) {
+    const subObj = getCaseInsensitiveProp(db, [c]);
+    if (subObj && typeof subObj === 'object') {
+      if (Array.isArray(subObj)) {
+        // If subObj itself is array of target items
+        if (subObj.length > 0 && typeof subObj[0] === 'object') {
+          const sample = subObj[0];
+          const hasKey = targetKeys.some(tk => getCaseInsensitiveProp(sample, [tk]) !== undefined);
+          if (hasKey) return subObj;
+        }
+      } else {
+        const nested = getCaseInsensitiveProp(subObj, targetKeys);
+        if (Array.isArray(nested)) return nested;
+      }
+    }
+  }
+
+  // If db itself is array
+  if (Array.isArray(db) && db.length > 0) {
+    const sample = db[0];
+    const matchesTarget = targetKeys.some(tk => getCaseInsensitiveProp(sample, [tk]) !== undefined);
+    if (matchesTarget) return db;
+  }
+
+  return null;
+}
+
+export function normalizeSiswaList(rawList: any[]): Siswa[] {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((item, idx) => {
+    const nisVal = String(
+      item.nis ?? item.NIS ?? item.NISN ?? item.nisn ?? item["No Induk"] ?? item.no_induk ?? item.id ?? `100${idx + 1}`
+    ).trim();
+    const namaVal = String(
+      item.nama ?? item.Nama ?? item.NAMA ?? item.name ?? item.Name ?? item["Nama Lengkap"] ?? ''
+    ).trim();
+    const kelasVal = String(
+      item.kelas ?? item.Kelas ?? item.KELAS ?? item.class ?? item.Class ?? item["Nama Kelas"] ?? 'XI-MIPA-1'
+    ).trim();
+    const emailVal = String(
+      item.email ?? item.Email ?? item.EMAIL ?? item["Alamat Email"] ?? ''
+    ).trim();
+    const userVal = String(
+      item.username ?? item.Username ?? item.USERNAME ?? item.user ?? nisVal
+    ).trim();
+    const passVal = String(
+      item.password ?? item.Password ?? item.PASSWORD ?? item.sandi ?? 'smasa123'
+    ).trim();
+
+    return {
+      id: String(item.id ?? item.ID ?? item.Id ?? (`S${nisVal || idx + 1}`)),
+      nis: nisVal,
+      nama: namaVal || `Siswa ${idx + 1}`,
+      kelas: kelasVal || 'XI-MIPA-1',
+      email: emailVal || `${nisVal}@smasa.sch.id`,
+      username: userVal || nisVal,
+      password: passVal || 'smasa123',
+    };
+  }).filter(s => s.nama.trim().length > 0 || s.nis.trim().length > 0);
+}
+
+export function normalizeNilaiList(rawList: any[]): Nilai[] {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((item, idx) => {
+    const tugas = Number(item.tugas ?? item.Tugas ?? 0);
+    const uh1 = Number(item.uh1 ?? item.UH1 ?? item.uh_1 ?? 0);
+    const uh2 = Number(item.uh2 ?? item.UH2 ?? item.uh_2 ?? 0);
+    const uh3 = Number(item.uh3 ?? item.UH3 ?? item.uh_3 ?? 0);
+    const uts = Number(item.uts ?? item.UTS ?? 0);
+    const uas = Number(item.uas ?? item.UAS ?? 0);
+    
+    const calc = hitungTotalDanGrade(tugas, uh1, uh2, uh3, uts, uas);
+    const total = Number(item.total ?? item.Total ?? calc.total);
+    const grade = String(item.grade ?? item.Grade ?? calc.grade);
+
+    return {
+      id: String(item.id ?? item.ID ?? (`N${idx + 1}_${Date.now()}`)),
+      siswaId: String(item.siswaId ?? item.siswaid ?? item.SiswaId ?? item.siswa_id ?? item.nis ?? ''),
+      siswaNama: String(item.siswaNama ?? item.siswanama ?? item.SiswaNama ?? item.siswa_nama ?? item.nama ?? ''),
+      siswaKelas: String(item.siswaKelas ?? item.siswakelas ?? item.SiswaKelas ?? item.siswa_kelas ?? item.kelas ?? ''),
+      tugas,
+      uh1,
+      uh2,
+      uh3,
+      uts,
+      uas,
+      total,
+      grade,
+      keterangan: String(item.keterangan ?? item.Keterangan ?? (total >= 75 ? 'Tuntas' : 'Belum Tuntas')),
+      catatan: String(item.catatan ?? item.Catatan ?? ''),
+    };
+  });
+}
+
+export function normalizePresensiList(rawList: any[]): Presensi[] {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((item, idx) => ({
+    id: String(item.id ?? item.ID ?? (`P${idx + 1}_${Date.now()}`)),
+    tanggal: String(item.tanggal ?? item.Tanggal ?? new Date().toISOString().split('T')[0]),
+    siswaId: String(item.siswaId ?? item.siswaid ?? item.SiswaId ?? item.siswa_id ?? item.nis ?? ''),
+    siswaNama: String(item.siswaNama ?? item.siswanama ?? item.SiswaNama ?? item.siswa_nama ?? item.nama ?? ''),
+    siswaKelas: String(item.siswaKelas ?? item.siswakelas ?? item.SiswaKelas ?? item.siswa_kelas ?? item.kelas ?? ''),
+    status: (item.status ?? item.Status ?? 'Hadir') as any,
+    keterangan: String(item.keterangan ?? item.Keterangan ?? ''),
+  }));
+}
+
+export function normalizePembelajaranList(rawList: any[]): Pembelajaran[] {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((item, idx) => ({
+    id: String(item.id ?? item.ID ?? (`M${idx + 1}`)),
+    jenis: (item.jenis ?? item.Jenis ?? 'Modul') as any,
+    judul: String(item.judul ?? item.Judul ?? ''),
+    deskripsi: String(item.deskripsi ?? item.Deskripsi ?? item.materi ?? item.Materi ?? ''),
+    tautan: String(item.tautan ?? item.Tautan ?? item.fileUrl ?? item.fileurl ?? item.FileUrl ?? item.linkTugas ?? ''),
+    tanggal: String(item.tanggal ?? item.Tanggal ?? new Date().toISOString().split('T')[0]),
+    tenggat: String(item.tenggat ?? item.Tenggat ?? ''),
+    isUnlocked: Boolean(item.isUnlocked ?? true),
+  }));
+}
+
+export function normalizePengumumanList(rawList: any[]): Pengumuman[] {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((item, idx) => ({
+    id: String(item.id ?? item.ID ?? (`AN${idx + 1}`)),
+    judul: String(item.judul ?? item.Judul ?? ''),
+    isi: String(item.isi ?? item.Isi ?? ''),
+    tanggal: String(item.tanggal ?? item.Tanggal ?? new Date().toLocaleDateString('id-ID')),
+    kategori: (item.kategori ?? item.Kategori ?? (item.penting ? 'Penting' : 'Info')) as any,
+  }));
+}
+
+export function normalizeRangkumanList(rawList: any[]): Rangkuman[] {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((item, idx) => ({
+    id: String(item.id ?? item.ID ?? (`R${idx + 1}`)),
+    siswaId: String(item.siswaId ?? item.SiswaId ?? item.siswa_id ?? ''),
+    pembelajaranId: String(item.pembelajaranId ?? item.PembelajaranId ?? ''),
+    isi: String(item.isi ?? item.Isi ?? item.isiRangkuman ?? item.IsiRangkuman ?? ''),
+    tanggal: String(item.tanggal ?? item.Tanggal ?? item.tglSubmit ?? item.TglSubmit ?? new Date().toLocaleDateString('id-ID')),
+  }));
+}
+
 export async function pullFromGoogleSheets(): Promise<boolean> {
   let url = getGoogleAppsScriptUrl();
   if (!url) return false;
@@ -309,32 +465,47 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
   }
 
   if (db && typeof db === 'object') {
-    const remoteSiswa = getCaseInsensitiveProp(db, ['siswa', 'siswaList', 'Siswa']);
-    const remoteNilai = getCaseInsensitiveProp(db, ['nilai', 'nilaiList', 'Nilai']);
-    const remotePresensi = getCaseInsensitiveProp(db, ['presensi', 'presensiList', 'Presensi']);
-    const remotePembelajaran = getCaseInsensitiveProp(db, ['pembelajaran', 'pembelajaranList', 'Pembelajaran']);
-    const remotePengumuman = getCaseInsensitiveProp(db, ['pengumuman', 'pengumumanList', 'Pengumuman']);
-    const remoteSettings = getCaseInsensitiveProp(db, ['settings', 'Settings']);
-    const remoteRangkuman = getCaseInsensitiveProp(db, ['rangkuman', 'rangkumanList', 'Rangkuman']);
+    const rawSiswa = extractEntityArray(db, ['siswa', 'siswaList', 'Siswa', 'DataSiswa']);
+    const rawNilai = extractEntityArray(db, ['nilai', 'nilaiList', 'Nilai', 'DataNilai']);
+    const rawPresensi = extractEntityArray(db, ['presensi', 'presensiList', 'Presensi', 'DataPresensi']);
+    const rawPembelajaran = extractEntityArray(db, ['pembelajaran', 'pembelajaranList', 'Pembelajaran', 'DataPembelajaran']);
+    const rawPengumuman = extractEntityArray(db, ['pengumuman', 'pengumumanList', 'Pengumuman', 'DataPengumuman']);
+    const rawRangkuman = extractEntityArray(db, ['rangkuman', 'rangkumanList', 'Rangkuman', 'DataRangkuman']);
+    const remoteSettings = getCaseInsensitiveProp(db, ['settings', 'Settings', 'Pengaturan']);
 
-    // Directly update local storage with Google Sheets data to ensure 100% exact parity
-    if (Array.isArray(remoteSiswa)) {
-      saveSiswa(remoteSiswa, true);
+    let updatedAny = false;
+
+    if (rawSiswa && Array.isArray(rawSiswa)) {
+      const normalized = normalizeSiswaList(rawSiswa);
+      if (normalized.length > 0) {
+        saveSiswa(normalized, true);
+        updatedAny = true;
+      }
     }
-    if (Array.isArray(remoteNilai)) {
-      saveNilai(remoteNilai, true);
+    if (rawNilai && Array.isArray(rawNilai)) {
+      const normalized = normalizeNilaiList(rawNilai);
+      saveNilai(normalized, true);
+      updatedAny = true;
     }
-    if (Array.isArray(remotePresensi)) {
-      savePresensi(remotePresensi, true);
+    if (rawPresensi && Array.isArray(rawPresensi)) {
+      const normalized = normalizePresensiList(rawPresensi);
+      savePresensi(normalized, true);
+      updatedAny = true;
     }
-    if (Array.isArray(remotePembelajaran)) {
-      savePembelajaran(remotePembelajaran, true);
+    if (rawPembelajaran && Array.isArray(rawPembelajaran)) {
+      const normalized = normalizePembelajaranList(rawPembelajaran);
+      savePembelajaran(normalized, true);
+      updatedAny = true;
     }
-    if (Array.isArray(remotePengumuman)) {
-      savePengumuman(remotePengumuman, true);
+    if (rawPengumuman && Array.isArray(rawPengumuman)) {
+      const normalized = normalizePengumumanList(rawPengumuman);
+      savePengumuman(normalized, true);
+      updatedAny = true;
     }
-    if (Array.isArray(remoteRangkuman)) {
-      saveRangkuman(remoteRangkuman, true);
+    if (rawRangkuman && Array.isArray(rawRangkuman)) {
+      const normalized = normalizeRangkumanList(rawRangkuman);
+      saveRangkuman(normalized, true);
+      updatedAny = true;
     }
     if (remoteSettings) {
       const settingsObj = Array.isArray(remoteSettings) ? remoteSettings[0] : remoteSettings;
@@ -342,9 +513,11 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
         if (settingsObj.kkm) settingsObj.kkm = Number(settingsObj.kkm);
         const currentSettings = loadSettings();
         saveSettings({ ...DEFAULT_SETTINGS, ...currentSettings, ...settingsObj, spreadsheetUrl: url }, true);
+        updatedAny = true;
       }
     }
-    return true;
+
+    return updatedAny || true;
   }
 
   return false;
@@ -786,29 +959,58 @@ export async function pushSuperAdminToGoogleSheets(): Promise<boolean> {
   }
 
   const rawTeachers = loadTeacherAccounts();
-  const teacherMap = new Map<string, TeacherAccount>();
+  const activeUsername = (getActiveTeacherUsername() || '').toLowerCase();
+  const currentSiswaCount = loadSiswa().length;
+
+  const teacherMap = new Map<string, any>();
   for (const t of rawTeachers) {
     if (!t.username || !t.username.trim()) continue;
     const key = t.username.trim().toLowerCase();
     const isSeedAdmin = key === 'romlah' || key === 'bambang' || key === 'admin';
     const isApp = isSeedAdmin || t.isApproved === true || String(t.isApproved).trim().toLowerCase() === 'true' || String(t.isApproved).trim() === '1';
 
-    let jSiswa = t.jumlahSiswa;
-    if (jSiswa === undefined || jSiswa === null) {
-      const siswaList = getLocalStorageData<any>('smasa_' + key + '_siswa', SEED_SISWA);
-      jSiswa = Array.isArray(siswaList) ? siswaList.length : 0;
+    let count = 0;
+    if (activeUsername && key === activeUsername) {
+      count = currentSiswaCount;
+    } else if (t.jumlahSiswa !== undefined && t.jumlahSiswa !== null && Number(t.jumlahSiswa) > 0) {
+      count = Number(t.jumlahSiswa);
+    } else {
+      const localSiswa = getLocalStorageData<any>('smasa_' + key + '_siswa', []);
+      count = Array.isArray(localSiswa) && localSiswa.length > 0 ? localSiswa.length : Number(t.jumlahSiswa || 0);
     }
 
+    const teacherObj = {
+      ...t,
+      username: key,
+      isApproved: isApp,
+      jumlahSiswa: count,
+      JumlahSiswa: count,
+      jumlahsiswa: count,
+      "Jumlah Siswa": count,
+      jumlah_siswa: count,
+      "Jumlah_Siswa": count,
+      siswa: count,
+      Siswa: count,
+    };
+
     if (!teacherMap.has(key)) {
-      teacherMap.set(key, { ...t, username: key, isApproved: isApp, jumlahSiswa: Number(jSiswa || 0) });
+      teacherMap.set(key, teacherObj);
     } else {
       const existing = teacherMap.get(key)!;
+      const maxCount = Math.max(count, Number(existing.jumlahSiswa || 0));
       teacherMap.set(key, {
         ...existing,
-        ...t,
+        ...teacherObj,
         username: key,
         isApproved: isSeedAdmin || existing.isApproved || isApp,
-        jumlahSiswa: Number(jSiswa || existing.jumlahSiswa || 0)
+        jumlahSiswa: maxCount,
+        JumlahSiswa: maxCount,
+        jumlahsiswa: maxCount,
+        "Jumlah Siswa": maxCount,
+        jumlah_siswa: maxCount,
+        "Jumlah_Siswa": maxCount,
+        siswa: maxCount,
+        Siswa: maxCount,
       });
     }
   }
@@ -1056,6 +1258,14 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
         isApp = false;
       }
 
+      const rawJSiswa = remoteT.jumlahSiswa ?? remoteT.jumlahsiswa ?? remoteT.JumlahSiswa ?? 
+                        remoteT["Jumlah Siswa"] ?? remoteT.jumlah_siswa ?? remoteT["Jumlah_Siswa"] ?? 
+                        remoteT.siswa ?? remoteT.Siswa;
+
+      const jSiswaVal = (rawJSiswa !== undefined && rawJSiswa !== null && rawJSiswa !== '')
+        ? Number(rawJSiswa)
+        : (localMatch?.jumlahSiswa ?? 0);
+
       return {
         id: tId,
         nama: namaVal || localMatch?.nama || finalUsername,
@@ -1069,7 +1279,7 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
         ),
         spreadsheetUrl: String(remoteT.spreadsheetUrl ?? remoteT.spreadsheeturl ?? remoteT.SpreadsheetUrl ?? localMatch?.spreadsheetUrl ?? ''),
         email: String(remoteT.email ?? remoteT.Email ?? localMatch?.email ?? ''),
-        jumlahSiswa: Number(remoteT.jumlahSiswa ?? remoteT.jumlahsiswa ?? remoteT.JumlahSiswa ?? localMatch?.jumlahSiswa ?? 0)
+        jumlahSiswa: jSiswaVal
       };
     }).filter((t: TeacherAccount) => t.username.trim().length > 0);
 

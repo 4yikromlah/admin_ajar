@@ -410,21 +410,46 @@ export default function KelolaNilai({
   const [importError, setImportError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Filter list Nilai
-  const filteredNilai = nilaiList.filter((n) => {
-    const matchesSearch =
-      n.siswaNama.toLowerCase().includes(search.toLowerCase()) ||
-      n.siswaKelas.toLowerCase().includes(search.toLowerCase());
-    const matchesKelas = filterKelas === '' || n.siswaKelas === filterKelas;
-    return matchesSearch && matchesKelas;
-  });
+  // Filter list Nilai - Tampilkan semua siswa per kelas (default nilai 0 jika belum ada)
+  const filteredNilai: Nilai[] = siswaList
+    .filter((s) => {
+      const matchesSearch =
+        s.nama.toLowerCase().includes(search.toLowerCase()) ||
+        s.nis.toLowerCase().includes(search.toLowerCase()) ||
+        s.kelas.toLowerCase().includes(search.toLowerCase());
+      const matchesKelas = filterKelas === '' || s.kelas === filterKelas;
+      return matchesSearch && matchesKelas;
+    })
+    .map((s) => {
+      const existing = nilaiList.find(
+        (n) => n.siswaId === s.id || (s.nis && n.siswaId === s.nis)
+      );
+      if (existing) {
+        return existing;
+      }
+      const defaultCalc = hitungTotalDanGrade(0, 0, 0, 0, 0, 0);
+      return {
+        id: `N_VIRTUAL_${s.id}`,
+        siswaId: s.id,
+        siswaNama: s.nama,
+        siswaKelas: s.kelas,
+        tugas: 0,
+        uh1: 0,
+        uh2: 0,
+        uh3: 0,
+        uts: 0,
+        uas: 0,
+        total: defaultCalc.total,
+        grade: defaultCalc.grade,
+      };
+    });
 
   // Ambil daftar kelas unik untuk filter dropdown
-  const uniqueKelasList = Array.from(new Set(siswaList.map((s) => s.kelas)));
+  const uniqueKelasList = Array.from(new Set(siswaList.map((s) => s.kelas))).filter(Boolean).sort();
 
-  // Siswa yang belum memiliki nilai (untuk formulir Tambah Nilai)
+  // Siswa yang belum memiliki nilai
   const siswaTanpaNilai = siswaList.filter(
-    (s) => !nilaiList.some((n) => n.siswaId === s.id)
+    (s) => !nilaiList.some((n) => n.siswaId === s.id || (s.nis && n.siswaId === s.nis))
   );
 
   // Buka Form Tambah
@@ -432,15 +457,17 @@ export default function KelolaNilai({
     setSelectedNilai(null);
     if (siswaTanpaNilai.length > 0) {
       setSelectedSiswaId(siswaTanpaNilai[0].id);
+    } else if (siswaList.length > 0) {
+      setSelectedSiswaId(siswaList[0].id);
     } else {
       setSelectedSiswaId('');
     }
-    setTugas(80);
-    setUh1(80);
-    setUh2(80);
-    setUh3(80);
-    setUts(80);
-    setUas(80);
+    setTugas(0);
+    setUh1(0);
+    setUh2(0);
+    setUh3(0);
+    setUts(0);
+    setUas(0);
     setShowFormModal(true);
   };
 
@@ -448,12 +475,12 @@ export default function KelolaNilai({
   const handleOpenEdit = (nilai: Nilai) => {
     setSelectedNilai(nilai);
     setSelectedSiswaId(nilai.siswaId);
-    setTugas(nilai.tugas);
-    setUh1(nilai.uh1);
-    setUh2(nilai.uh2);
-    setUh3(nilai.uh3);
-    setUts(nilai.uts);
-    setUas(nilai.uas);
+    setTugas(nilai.tugas || 0);
+    setUh1(nilai.uh1 || 0);
+    setUh2(nilai.uh2 || 0);
+    setUh3(nilai.uh3 || 0);
+    setUts(nilai.uts || 0);
+    setUas(nilai.uas || 0);
     setShowFormModal(true);
   };
 
@@ -462,15 +489,21 @@ export default function KelolaNilai({
     e.preventDefault();
     if (!selectedSiswaId) return;
 
-    const targetSiswa = siswaList.find((s) => s.id === selectedSiswaId);
+    const targetSiswa = siswaList.find((s) => s.id === selectedSiswaId || s.nis === selectedSiswaId);
     if (!targetSiswa) return;
 
     const { total, grade } = hitungTotalDanGrade(tugas, uh1, uh2, uh3, uts, uas);
 
-    if (selectedNilai) {
+    const existingInStore = nilaiList.find(
+      (n) => n.siswaId === targetSiswa.id || (targetSiswa.nis && n.siswaId === targetSiswa.nis) || (selectedNilai && selectedNilai.id === n.id)
+    );
+
+    if (existingInStore) {
       // Edit Mode
       onUpdateNilai({
-        ...selectedNilai,
+        ...existingInStore,
+        siswaNama: targetSiswa.nama,
+        siswaKelas: targetSiswa.kelas,
         tugas,
         uh1,
         uh2,
@@ -484,7 +517,7 @@ export default function KelolaNilai({
       // Tambah Baru
       const baru: Nilai = {
         id: `N${Date.now()}`,
-        siswaId: selectedSiswaId,
+        siswaId: targetSiswa.id,
         siswaNama: targetSiswa.nama,
         siswaKelas: targetSiswa.kelas,
         tugas,

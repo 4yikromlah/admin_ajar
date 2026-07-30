@@ -42,7 +42,7 @@ export interface Presensi {
   metode?: 'Manual' | 'QR Code';
 }
 
-export type JenisPembelajaran = 'Modul' | 'Literasi' | 'Tugas/Tes';
+export type JenisPembelajaran = 'Modul' | 'Literasi' | 'Tugas Harian' | 'Tugas Rumah' | 'Tugas/Tes';
 
 export interface Pembelajaran {
   id: string;
@@ -52,12 +52,16 @@ export interface Pembelajaran {
   tautan: string;
   tanggal: string; // YYYY-MM-DD
   tenggat?: string; // YYYY-MM-DD (Tenggat Waktu)
+  jamMulai?: string; // e.g. "07:30" (Waktu Akses Mulai untuk Tugas Harian)
+  jamSelesai?: string; // e.g. "14:00" (Waktu Akses Selesai untuk Tugas Harian)
   isUnlocked?: boolean;
   kelasConfig?: {
     [kelas: string]: {
       isActive: boolean;
       tanggal: string;
       tenggat: string;
+      jamMulai?: string;
+      jamSelesai?: string;
     };
   };
 }

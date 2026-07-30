@@ -80,12 +80,17 @@ export default function KelolaPembelajaran({
   const [tautan, setTautan] = useState('');
   const [tanggal, setTanggal] = useState('');
   const [tenggat, setTenggat] = useState('');
+  const [jamMulai, setJamMulai] = useState('07:30');
+  const [jamSelesai, setJamSelesai] = useState('14:00');
   const [jenis, setJenis] = useState<JenisPembelajaran>('Modul');
 
   // Filter list berdasarkan tab aktif
-  const filteredPembelajaran = pembelajaranList.filter(
-    (p) => p.jenis === activeTab
-  );
+  const filteredPembelajaran = pembelajaranList.filter((p) => {
+    if (activeTab === 'Tugas Harian') {
+      return p.jenis === 'Tugas Harian' || p.jenis === 'Tugas/Tes';
+    }
+    return p.jenis === activeTab;
+  });
 
   // Fungsi pembantu menghitung tenggat otomatis (+3 hari)
   const get3DaysAfter = (dateStr: string) => {
@@ -113,6 +118,8 @@ export default function KelolaPembelajaran({
     const today = new Date().toISOString().split('T')[0];
     setTanggal(today);
     setTenggat(get3DaysAfter(today));
+    setJamMulai('07:30');
+    setJamSelesai('14:00');
     setJenis(activeTab);
 
     // Initialize empty config for classes
@@ -137,6 +144,8 @@ export default function KelolaPembelajaran({
     setTautan(pembelajaran.tautan);
     setTanggal(pembelajaran.tanggal);
     setTenggat(pembelajaran.tenggat || get3DaysAfter(pembelajaran.tanggal));
+    setJamMulai(pembelajaran.jamMulai || '07:30');
+    setJamSelesai(pembelajaran.jamSelesai || '14:00');
     setJenis(pembelajaran.jenis);
 
     // Initialize from existing config or create defaults
@@ -187,6 +196,8 @@ export default function KelolaPembelajaran({
         tautan,
         tanggal,
         tenggat: jenis === 'Modul' ? '' : (tenggat || get3DaysAfter(tanggal)),
+        jamMulai: jenis === 'Tugas Harian' ? jamMulai : undefined,
+        jamSelesai: jenis === 'Tugas Harian' ? jamSelesai : undefined,
         jenis,
         kelasConfig: cleanKelasConfig,
       });
@@ -199,6 +210,8 @@ export default function KelolaPembelajaran({
         tautan,
         tanggal,
         tenggat: jenis === 'Modul' ? '' : (tenggat || get3DaysAfter(tanggal)),
+        jamMulai: jenis === 'Tugas Harian' ? jamMulai : undefined,
+        jamSelesai: jenis === 'Tugas Harian' ? jamSelesai : undefined,
         jenis,
         kelasConfig: cleanKelasConfig,
       };
@@ -327,9 +340,39 @@ export default function KelolaPembelajaran({
                   >
                     <option value="Modul">Modul (Bahan Bacaan/Slide)</option>
                     <option value="Literasi">Literasi (Artikel/Wawasan Eksternal)</option>
-                    <option value="Tugas/Tes">Tugas / Kuis Evaluasi</option>
+                    <option value="Tugas Harian">Tugas Harian (Tugas Sekolah)</option>
+                    <option value="Tugas Rumah">Tugas Rumah (PR/Mandiri)</option>
                   </select>
                 </div>
+
+                {jenis === 'Tugas Harian' && (
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-amber-800 block mb-1 flex items-center gap-1">
+                        <Clock size={11} /> Jam Mulai Akses
+                      </label>
+                      <input
+                        type="time"
+                        value={jamMulai}
+                        onChange={(e) => setJamMulai(e.target.value)}
+                        disabled={isOverdue}
+                        className="w-full text-xs px-3 py-2 rounded-xl border border-amber-200 bg-white focus:outline-none font-bold text-amber-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-amber-800 block mb-1 flex items-center gap-1">
+                        <Clock size={11} /> Jam Selesai Akses
+                      </label>
+                      <input
+                        type="time"
+                        value={jamSelesai}
+                        onChange={(e) => setJamSelesai(e.target.value)}
+                        disabled={isOverdue}
+                        className="w-full text-xs px-3 py-2 rounded-xl border border-amber-200 bg-white focus:outline-none font-bold text-amber-900"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
@@ -669,9 +712,9 @@ export default function KelolaPembelajaran({
         </div>
       </div>
 
-      {/* Sub-Menu Tabs (Modul, Literasi, Tugas/Tes) */}
+      {/* Sub-Menu Tabs (Modul, Literasi, Tugas Harian, Tugas Rumah) */}
       <div className="flex rounded-2xl p-1.5 bg-slate-100 shadow-[inset_2px_2px_4px_#cbd5e1,inset_-2px_-2px_4px_#ffffff]">
-        {(['Modul', 'Literasi', 'Tugas/Tes'] as JenisPembelajaran[]).map((tab) => {
+        {(['Modul', 'Literasi', 'Tugas Harian', 'Tugas Rumah'] as JenisPembelajaran[]).map((tab) => {
           const isCurrent = activeTab === tab;
           return (
             <button
@@ -900,9 +943,37 @@ export default function KelolaPembelajaran({
                   >
                     <option value="Modul">Modul (Bahan Bacaan/Slide)</option>
                     <option value="Literasi">Literasi (Artikel/Wawasan Eksternal)</option>
-                    <option value="Tugas/Tes">Tugas / Kuis Evaluasi</option>
+                    <option value="Tugas Harian">Tugas Harian (Tugas Sekolah)</option>
+                    <option value="Tugas Rumah">Tugas Rumah (PR/Mandiri)</option>
                   </select>
                 </div>
+
+                {jenis === 'Tugas Harian' && (
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-amber-800 block mb-1 flex items-center gap-1">
+                        <Clock size={11} /> Jam Mulai Akses
+                      </label>
+                      <input
+                        type="time"
+                        value={jamMulai}
+                        onChange={(e) => setJamMulai(e.target.value)}
+                        className="w-full text-xs px-3 py-2 rounded-xl border border-amber-200 bg-white focus:outline-none font-bold text-amber-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-amber-800 block mb-1 flex items-center gap-1">
+                        <Clock size={11} /> Jam Selesai Akses
+                      </label>
+                      <input
+                        type="time"
+                        value={jamSelesai}
+                        onChange={(e) => setJamSelesai(e.target.value)}
+                        className="w-full text-xs px-3 py-2 rounded-xl border border-amber-200 bg-white focus:outline-none font-bold text-amber-900"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wider block mb-1.5">
