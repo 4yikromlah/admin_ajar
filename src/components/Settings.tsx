@@ -41,32 +41,32 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
   const [adminEmail, setAdminEmail] = useState(settings.adminEmail || '');
   const [mataPelajaran, setMataPelajaran] = useState(settings.mataPelajaran || 'Informatika');
 
-  // Sinkronkan form state saat prop settings diperbarui (misal dari Google Sheets/load state)
-  React.useEffect(() => {
-    setNamaGuru(settings.namaGuru || '');
-    setNip(settings.nip || '');
-    setNamaKS(settings.namaKS || '');
-    setJabatanKS(settings.jabatanKS || '');
-    setNipKS(settings.nipKS || '');
-    setKopPemprov(settings.kopPemprov || '');
-    setKopDinas(settings.kopDinas || '');
-    setKopSekolah(settings.kopSekolah || '');
-    setKopAlamat(settings.kopAlamat || '');
-    setLogoSekolah(settings.logoSekolah || '');
-    setLogoProv(settings.logoProv || '');
-    setKkm(settings.kkm ?? 75);
-    setKota(settings.kota || 'Salatiga');
-    setTahunPelajaran(settings.tahunPelajaran || '2025/2026');
-    setLiterasiStartAccess(settings.literasiStartAccess || '00:00');
-    setLiterasiEndAccess(settings.literasiEndAccess || '23:59');
-    setTugasStartAccess(settings.tugasStartAccess || '00:00');
-    setTugasEndAccess(settings.tugasEndAccess || '23:59');
-    setSpreadsheetUrl(settings.spreadsheetUrl || '');
-    setAdminUsername(settings.adminUsername || 'admin');
-    setAdminPassword(settings.adminPassword || 'admin123');
-    setAdminEmail(settings.adminEmail || '');
-    setMataPelajaran(settings.mataPelajaran || 'Informatika');
-  }, [settings]);
+  // Fungsi helper untuk menyinkronkan data form dari object settings (digunakan saat manual pull)
+  const syncFormFromSettings = (s: AppSettings) => {
+    setNamaGuru(s.namaGuru || '');
+    setNip(s.nip || '');
+    setNamaKS(s.namaKS || '');
+    setJabatanKS(s.jabatanKS || '');
+    setNipKS(s.nipKS || '');
+    setKopPemprov(s.kopPemprov || '');
+    setKopDinas(s.kopDinas || '');
+    setKopSekolah(s.kopSekolah || '');
+    setKopAlamat(s.kopAlamat || '');
+    setLogoSekolah(s.logoSekolah || '');
+    setLogoProv(s.logoProv || '');
+    setKkm(s.kkm ?? 75);
+    setKota(s.kota || 'Salatiga');
+    setTahunPelajaran(s.tahunPelajaran || '2025/2026');
+    setLiterasiStartAccess(s.literasiStartAccess || '00:00');
+    setLiterasiEndAccess(s.literasiEndAccess || '23:59');
+    setTugasStartAccess(s.tugasStartAccess || '00:00');
+    setTugasEndAccess(s.tugasEndAccess || '23:59');
+    setSpreadsheetUrl(s.spreadsheetUrl || '');
+    setAdminUsername(s.adminUsername || 'admin');
+    setAdminPassword(s.adminPassword || 'admin123');
+    setAdminEmail(s.adminEmail || '');
+    setMataPelajaran(s.mataPelajaran || 'Informatika');
+  };
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -96,6 +96,8 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
       if (ok) {
         setManualSyncMsg('Berhasil menarik data dari Spreadsheet Guru! Data web sekarang 100% tersinkronkan dengan Google Sheets Anda.');
         if (onReloadAllStates) onReloadAllStates();
+        const fresh = loadSettings();
+        syncFormFromSettings(fresh);
       } else {
         setErrorMsg('Gagal menarik data dari Google Sheets. Pastikan URL Web App Apps Script valid dan Akses di-set "Siapa saja" (Anyone).');
       }
