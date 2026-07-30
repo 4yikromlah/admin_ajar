@@ -510,9 +510,20 @@ export async function pullFromGoogleSheets(): Promise<boolean> {
     if (remoteSettings) {
       const settingsObj = Array.isArray(remoteSettings) ? remoteSettings[0] : remoteSettings;
       if (settingsObj && typeof settingsObj === 'object') {
-        if (settingsObj.kkm) settingsObj.kkm = Number(settingsObj.kkm);
         const currentSettings = loadSettings();
-        saveSettings({ ...DEFAULT_SETTINGS, ...currentSettings, ...settingsObj, spreadsheetUrl: url }, true);
+        const mergedSettings = { ...DEFAULT_SETTINGS, ...currentSettings };
+        
+        // Hanya timpa nilai lokal jika nilai dari remote tidak kosong / tidak undefined
+        (Object.keys(settingsObj) as (keyof AppSettings)[]).forEach((k) => {
+          const val = settingsObj[k];
+          if (val !== undefined && val !== null && val !== '') {
+            (mergedSettings as any)[k] = val;
+          }
+        });
+        if (settingsObj.kkm) mergedSettings.kkm = Number(settingsObj.kkm);
+        mergedSettings.spreadsheetUrl = url;
+
+        saveSettings(mergedSettings, true);
         updatedAny = true;
       }
     }
@@ -768,7 +779,7 @@ export const saveSettings = (settings: AppSettings, skipAutoSync = false) => {
         }
         return t;
       });
-      saveTeacherAccounts(updated);
+      saveTeacherAccounts(updated, true);
     }
 
     if (!skipAutoSync) {

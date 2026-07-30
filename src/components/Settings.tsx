@@ -41,6 +41,33 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
   const [adminEmail, setAdminEmail] = useState(settings.adminEmail || '');
   const [mataPelajaran, setMataPelajaran] = useState(settings.mataPelajaran || 'Informatika');
 
+  // Sinkronkan form state saat prop settings diperbarui (misal dari Google Sheets/load state)
+  React.useEffect(() => {
+    setNamaGuru(settings.namaGuru || '');
+    setNip(settings.nip || '');
+    setNamaKS(settings.namaKS || '');
+    setJabatanKS(settings.jabatanKS || '');
+    setNipKS(settings.nipKS || '');
+    setKopPemprov(settings.kopPemprov || '');
+    setKopDinas(settings.kopDinas || '');
+    setKopSekolah(settings.kopSekolah || '');
+    setKopAlamat(settings.kopAlamat || '');
+    setLogoSekolah(settings.logoSekolah || '');
+    setLogoProv(settings.logoProv || '');
+    setKkm(settings.kkm ?? 75);
+    setKota(settings.kota || 'Salatiga');
+    setTahunPelajaran(settings.tahunPelajaran || '2025/2026');
+    setLiterasiStartAccess(settings.literasiStartAccess || '00:00');
+    setLiterasiEndAccess(settings.literasiEndAccess || '23:59');
+    setTugasStartAccess(settings.tugasStartAccess || '00:00');
+    setTugasEndAccess(settings.tugasEndAccess || '23:59');
+    setSpreadsheetUrl(settings.spreadsheetUrl || '');
+    setAdminUsername(settings.adminUsername || 'admin');
+    setAdminPassword(settings.adminPassword || 'admin123');
+    setAdminEmail(settings.adminEmail || '');
+    setMataPelajaran(settings.mataPelajaran || 'Informatika');
+  }, [settings]);
+
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -135,28 +162,63 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
     }
   };
 
-  // File to base64 converter
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'sekolah' | 'prov') => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      
-      // Limit size to 1.5MB to avoid localStorage quota issues
-      if (file.size > 1500000) {
-        setErrorMsg('Ukuran file terlalu besar! Silakan gunakan gambar di bawah 1.5 MB.');
-        return;
-      }
-
-      setErrorMsg('');
+  // Kompresi dan resize logo menjadi max 300x300px (ukuran file super kecil ~15KB)
+  const compressAndResizeImage = (file: File, maxWidth = 300, maxHeight = 300): Promise<string> => {
+    return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (event) => {
-        const base64 = event.target?.result as string;
-        if (type === 'sekolah') {
-          setLogoSekolah(base64);
-        } else {
-          setLogoProv(base64);
-        }
+        const img = document.createElement('img');
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/png', 0.85));
+          } else {
+            resolve(event.target?.result as string);
+          }
+        };
+        img.onerror = () => resolve(event.target?.result as string);
+        img.src = event.target?.result as string;
       };
+      reader.onerror = () => resolve('');
       reader.readAsDataURL(file);
+    });
+  };
+
+  // File to compressed base64 converter
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'sekolah' | 'prov') => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setErrorMsg('');
+      try {
+        const compressedBase64 = await compressAndResizeImage(file);
+        if (type === 'sekolah') {
+          setLogoSekolah(compressedBase64);
+        } else {
+          setLogoProv(compressedBase64);
+        }
+      } catch (err) {
+        setErrorMsg('Gagal memproses file gambar logo!');
+      }
     }
   };
 
@@ -867,7 +929,7 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
   if (!ss) {
     return ContentService.createTextOutput(JSON.stringify({ 
       status: "error", 
-      message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
+      message: "ERROR: Script tidak terikat dengan Spreadsheet!" 
     })).setMimeType(ContentService.MimeType.JSON);
   }
   var result = {};
@@ -899,29 +961,44 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function saveLogoToDriveFolder(base64Data, fileName) {
+  if (!base64Data || typeof base64Data !== 'string' || !base64Data.startsWith('data:image')) {
+    return base64Data;
+  }
+  try {
+    var folderName = "SMASA_Media_Logos";
+    var folders = DriveApp.getFoldersByName(folderName);
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+    
+    var parts = base64Data.split(',');
+    var mimeMatch = parts[0].match(/:(.*?);/);
+    var mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+    var bytes = Utilities.base64Decode(parts[1]);
+    var blob = Utilities.newBlob(bytes, mimeType, fileName);
+    
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return "https://lh3.googleusercontent.com/d/" + file.getId();
+  } catch (err) {
+    return base64Data.length > 45000 ? "" : base64Data;
+  }
+}
+
 function doPost(e) {
   if (!e || !e.postData || !e.postData.contents) {
-    return ContentService.createTextOutput(JSON.stringify({ 
-      status: "error", 
-      message: "Fungsi doPost() tidak dapat dijalankan secara langsung lewat tombol Run di editor Apps Script. Fungsi ini berjalan otomatis saat dipanggil dari aplikasi SMASA Online." 
-    })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Missing postData" }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) {
-    return ContentService.createTextOutput(JSON.stringify({ 
-      status: "error", 
-      message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
-    })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Spreadsheet tidak terikat" }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
   var payload = JSON.parse(e.postData.contents);
   if (payload && payload.action === 'sendEmail') {
     if (payload.recipient && payload.subject && payload.body) {
       try {
-        MailApp.sendEmail({
-          to: payload.recipient,
-          subject: payload.subject,
-          htmlBody: payload.body
-        });
+        MailApp.sendEmail({ to: payload.recipient, subject: payload.subject, htmlBody: payload.body });
         return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Email dikirim via Gmail" }))
           .setMimeType(ContentService.MimeType.JSON);
       } catch(mErr) {
@@ -936,10 +1013,20 @@ function doPost(e) {
     if (!sheet) { sheet = ss.insertSheet(sheetName); } else { sheet.clear(); }
     var data = payload[key];
     if (!data) continue;
-    if (!Array.isArray(data)) {
-      data = [data];
-    }
+    if (!Array.isArray(data)) { data = [data]; }
     if (data.length === 0) continue;
+
+    if (sheetName === 'Settings' && data.length > 0) {
+      data.forEach(function(item) {
+        if (item.logoSekolah && typeof item.logoSekolah === 'string' && item.logoSekolah.startsWith('data:image')) {
+          item.logoSekolah = saveLogoToDriveFolder(item.logoSekolah, 'logo_sekolah_' + Date.now() + '.png');
+        }
+        if (item.logoProv && typeof item.logoProv === 'string' && item.logoProv.startsWith('data:image')) {
+          item.logoProv = saveLogoToDriveFolder(item.logoProv, 'logo_provinsi_' + Date.now() + '.png');
+        }
+      });
+    }
+
     var headers = [];
     data.forEach(function(item) {
       Object.keys(item).forEach(function(k) {
@@ -966,7 +1053,7 @@ function doPost(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }`;
                         navigator.clipboard.writeText(code);
-                        alert("Kode script berhasil disalin ke clipboard!");
+                        alert("Kode script terbaru (dengan dukungan simpan Logo ke Google Drive) berhasil disalin ke clipboard!");
                       }}
                       className="px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-[9px] font-black uppercase tracking-wide flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
                     >
@@ -976,22 +1063,13 @@ function doPost(e) {
                   <pre className="p-3 bg-slate-900 text-slate-300 rounded-xl text-[9px] font-mono overflow-x-auto max-h-40 shadow-inner">
 {`function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) {
-    return ContentService.createTextOutput(JSON.stringify({ 
-      status: "error", 
-      message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
   var result = {};
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
     var name = sheet.getName().toLowerCase();
     var data = sheet.getDataRange().getValues();
-    if (data.length <= 1) {
-      result[name] = [];
-      continue;
-    }
+    if (data.length <= 1) { result[name] = []; continue; }
     var headers = data[0];
     var rows = [];
     for (var r = 1; r < data.length; r++) {
@@ -1007,75 +1085,65 @@ function doPost(e) {
     }
     result[name] = rows;
   }
-  return ContentService.createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function saveLogoToDriveFolder(base64Data, fileName) {
+  if (!base64Data || typeof base64Data !== 'string' || !base64Data.startsWith('data:image')) return base64Data;
+  try {
+    var folderName = "SMASA_Media_Logos";
+    var folders = DriveApp.getFoldersByName(folderName);
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+    var parts = base64Data.split(',');
+    var mimeMatch = parts[0].match(/:(.*?);/);
+    var mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+    var bytes = Utilities.base64Decode(parts[1]);
+    var blob = Utilities.newBlob(bytes, mimeType, fileName);
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return "https://lh3.googleusercontent.com/d/" + file.getId();
+  } catch (err) { return base64Data.length > 45000 ? "" : base64Data; }
 }
 
 function doPost(e) {
-  if (!e || !e.postData || !e.postData.contents) {
-    return ContentService.createTextOutput(JSON.stringify({ 
-      status: "error", 
-      message: "Fungsi doPost() tidak dapat dijalankan secara langsung lewat tombol Run di editor Apps Script. Fungsi ini berjalan otomatis saat dipanggil dari aplikasi SMASA Online." 
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
+  if (!e || !e.postData || !e.postData.contents) return ContentService.createTextOutput(JSON.stringify({ status: "error" })).setMimeType(ContentService.MimeType.JSON);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) {
-    return ContentService.createTextOutput(JSON.stringify({ 
-      status: "error", 
-      message: "ERROR: Script tidak terikat dengan Spreadsheet! Pastikan Anda membuat/membuka Apps Script melalui menu 'Ekstensi' > 'Apps Script' dari dalam Google Spreadsheet Anda." 
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
   var payload = JSON.parse(e.postData.contents);
-  if (payload && payload.action === 'sendEmail') {
-    if (payload.recipient && payload.subject && payload.body) {
-      try {
-        MailApp.sendEmail({
-          to: payload.recipient,
-          subject: payload.subject,
-          htmlBody: payload.body
-        });
-        return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Email dikirim via Gmail" }))
-          .setMimeType(ContentService.MimeType.JSON);
-      } catch(mErr) {
-        return ContentService.createTextOutput(JSON.stringify({ status: "error", message: mErr.toString() }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-    }
-  }
   for (var key in payload) {
     var sheetName = key.charAt(0).toUpperCase() + key.slice(1);
     var sheet = ss.getSheetByName(sheetName);
     if (!sheet) { sheet = ss.insertSheet(sheetName); } else { sheet.clear(); }
     var data = payload[key];
     if (!data) continue;
-    if (!Array.isArray(data)) {
-      data = [data];
-    }
+    if (!Array.isArray(data)) data = [data];
     if (data.length === 0) continue;
-    var headers = [];
-    data.forEach(function(item) {
-      Object.keys(item).forEach(function(k) {
-        if (headers.indexOf(k) === -1) { headers.push(k); }
+    if (sheetName === 'Settings' && data.length > 0) {
+      data.forEach(function(item) {
+        if (item.logoSekolah && typeof item.logoSekolah === 'string' && item.logoSekolah.startsWith('data:image')) {
+          item.logoSekolah = saveLogoToDriveFolder(item.logoSekolah, 'logo_sekolah_' + Date.now() + '.png');
+        }
+        if (item.logoProv && typeof item.logoProv === 'string' && item.logoProv.startsWith('data:image')) {
+          item.logoProv = saveLogoToDriveFolder(item.logoProv, 'logo_provinsi_' + Date.now() + '.png');
+        }
       });
-    });
+    }
+    var headers = [];
+    data.forEach(function(item) { Object.keys(item).forEach(function(k) { if (headers.indexOf(k) === -1) headers.push(k); }); });
     sheet.appendRow(headers);
     var rows = [];
     data.forEach(function(item) {
       var row = [];
       headers.forEach(function(h) {
         var val = item[h];
-        if (val === undefined || val === null) { row.push(""); }
-        else if (typeof val === 'object') { row.push(JSON.stringify(val)); }
-        else { row.push(val); }
+        if (val === undefined || val === null) row.push("");
+        else if (typeof val === 'object') row.push(JSON.stringify(val));
+        else row.push(val);
       });
       rows.push(row);
     });
-    if (rows.length > 0) {
-      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-    }
+    if (rows.length > 0) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
   }
-  return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);
 }`}
                   </pre>
                 </div>
