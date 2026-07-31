@@ -175,7 +175,7 @@ export async function pushToGoogleSheets(): Promise<boolean> {
   const settings = loadSettings();
   const rangkuman = loadRangkuman();
 
-  // Sync active teacher's spreadsheetUrl & student count to teacher list
+  // Sync active teacher's spreadsheetUrl & student count to local teacher cache only
   const username = getActiveTeacherUsername();
   if (username) {
     const teachers = loadTeacherAccounts();
@@ -190,8 +190,7 @@ export async function pushToGoogleSheets(): Promise<boolean> {
       }
       return t;
     });
-    saveTeacherAccounts(updated, true); // Save to local teachers cache
-    pushSuperAdminToGoogleSheets().catch(e => console.warn('[Super Admin Push Error]', e));
+    saveTeacherAccounts(updated, true); // Save to local teachers cache without touching Super Admin
   }
 
   const db = {
@@ -758,25 +757,33 @@ export const saveSettings = (settings: AppSettings, skipAutoSync = false) => {
   const scopedKey = getScopedKey('settings');
   try {
     localStorage.setItem(scopedKey, JSON.stringify(settings));
-    // Also sync back to teacher list if the password, name, or school name was updated in settings
+    // Sesuai instruksi: Pada menu pengaturan di dasbor guru, hanya pengaturan username, password, dan jumlah siswa yang masuk ke dasbor super admin
     const username = getActiveTeacherUsername();
     if (username) {
       const teachers = loadTeacherAccounts();
+      const siswaCount = loadSiswa().length;
+      const newUsername = (settings.adminUsername && settings.adminUsername.trim())
+        ? settings.adminUsername.trim()
+        : username;
+
       const updated = teachers.map(t => {
-        if (t.username === username) {
+        if (t.username.toLowerCase() === username.toLowerCase()) {
           return {
             ...t,
-            nama: settings.namaGuru,
-            password: settings.adminPassword,
-            mataPelajaran: settings.mataPelajaran || "Informatika",
-            asalSekolah: settings.kopSekolah || "SMA NEGERI 1 SALATIGA",
-            spreadsheetUrl: settings.spreadsheetUrl || "",
-            email: settings.adminEmail || ""
+            username: newUsername,
+            password: settings.adminPassword || t.password,
+            jumlahSiswa: siswaCount,
+            lastSyncAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
           };
         }
         return t;
       });
-      saveTeacherAccounts(updated, true);
+
+      if (newUsername.toLowerCase() !== username.toLowerCase()) {
+        localStorage.setItem('loggedTeacherUsername', newUsername);
+      }
+      // skipPush = false agar perubahan username, password, dan jumlah siswa dikirim/terpusat ke dasbor Super Admin
+      saveTeacherAccounts(updated, false);
     }
 
     if (!skipAutoSync) {
@@ -893,8 +900,7 @@ export function getSuperAdminSpreadsheetUrl(): string {
   const envUrl = 
     (import.meta as any).env?.SUPERADMIN_SPREADSHEET_URL || 
     (import.meta as any).env?.VITE_SUPERADMIN_SPREADSHEET_URL || 
-    (import.meta as any).env?.SPREADSHEET_URL || 
-    (typeof process !== 'undefined' && process?.env ? (process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL) : '') ||
+    (typeof process !== 'undefined' && process?.env ? (process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL) : '') ||
     '';
 
   const localUrl = localStorage.getItem('smasa_superadmin_spreadsheet_url') || '';

@@ -488,7 +488,7 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
                   id="input-settings-admin-password"
                 />
                 <p className="text-[10px] text-slate-400 mt-1 leading-normal">
-                  Gunakan kredensial ini untuk login ke Portal Guru selanjutnya. Kredensial bawaan adalah <strong>admin</strong> dan <strong>admin123</strong>.
+                  Gunakan kredensial ini untuk login ke Portal Guru selanjutnya. <strong>Catatan: Pada menu pengaturan ini, hanya pengaturan Username, Password, dan Jumlah Siswa yang masuk ke Dasbor Super Admin.</strong> Data aplikasi maupun URL Spreadsheet mandiri guru tetap terpisah dan berdiri sendiri.
                 </p>
               </div>
 
@@ -851,7 +851,7 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
 
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-bold text-slate-700 uppercase">
-                    URL Web App Google Apps Script Guru
+                    URL Web App Google Apps Script Guru (Mandiri & Terpisah)
                   </label>
                   <input
                     type="text"
@@ -862,7 +862,7 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
                     id="input-teacher-spreadsheet-url"
                   />
                   <p className="text-[10px] text-slate-500 leading-normal">
-                    Tempelkan Link Web App dari Google Apps Script spreadsheet pribadi Anda. Data <strong>Siswa, Nilai, Presensi, Pembelajaran, dan Pengumuman</strong> milik Anda akan tersimpan secara terpisah di Google Spreadsheet Anda sendiri (tidak bercampur dengan spreadsheet Super Admin).
+                    Tempelkan Link Web App dari Google Apps Script spreadsheet pribadi Anda. <strong>Spreadsheet Guru berdiri sendiri dan sepenuhnya terpisah dari Spreadsheet Super Admin.</strong> Seluruh data kelas Anda (Siswa, Nilai, Presensi, Pembelajaran, dan Pengumuman) tersimpan secara mandiri sebagai pusat data tunggal (Single Source of Truth) dan tidak bercampur dengan database Super Admin.
                   </p>
                 </div>
 

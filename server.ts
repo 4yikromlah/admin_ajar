@@ -21,7 +21,7 @@ app.use(express.json());
 const DEFAULT_SUPERADMIN_SPREADSHEET_URL = 'https://script.google.com/macros/s/AKfycbzb1VFTuPrmr1UpRePoi2m3IIFNJKXsxsceDpgkbFm0lsw71BOMjrTeCWCZhQxio9hW/exec';
 
 // Load saved config on startup with environment variable fallbacks for Vercel & serverless environments
-let spreadsheetUrl = process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
+let spreadsheetUrl = process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
 let adminPassword = process.env.SUPERADMIN_PASSWORD || 'sableng212';
 let adminEmail = process.env.SUPERADMIN_EMAIL || '4yik.romlah@gmail.com';
 
@@ -170,7 +170,7 @@ app.post('/api/teachers', async (req, res) => {
 });
 
 app.get('/api/superadmin-url', (req, res) => {
-  const activeUrl = spreadsheetUrl || process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || process.env.SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
+  const activeUrl = spreadsheetUrl || process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
   res.json({ 
     url: activeUrl,
     adminPassword,
