@@ -757,7 +757,7 @@ export const saveSettings = (settings: AppSettings, skipAutoSync = false) => {
   const scopedKey = getScopedKey('settings');
   try {
     localStorage.setItem(scopedKey, JSON.stringify(settings));
-    // Sesuai instruksi: Pada menu pengaturan di dasbor guru, hanya pengaturan username, password, dan jumlah siswa yang masuk ke dasbor super admin
+    // Sesuai instruksi: Pada menu pengaturan di dasbor guru, hanya pengaturan username, password, email dan jumlah siswa yang masuk ke dasbor super admin
     const username = getActiveTeacherUsername();
     if (username) {
       const teachers = loadTeacherAccounts();
@@ -772,6 +772,7 @@ export const saveSettings = (settings: AppSettings, skipAutoSync = false) => {
             ...t,
             username: newUsername,
             password: settings.adminPassword || t.password,
+            email: settings.adminEmail || t.email || '',
             jumlahSiswa: siswaCount,
             lastSyncAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
           };
@@ -782,7 +783,7 @@ export const saveSettings = (settings: AppSettings, skipAutoSync = false) => {
       if (newUsername.toLowerCase() !== username.toLowerCase()) {
         localStorage.setItem('loggedTeacherUsername', newUsername);
       }
-      // skipPush = false agar perubahan username, password, dan jumlah siswa dikirim/terpusat ke dasbor Super Admin
+      // skipPush = false agar perubahan username, password, email dan jumlah siswa dikirim/terpusat ke dasbor Super Admin
       saveTeacherAccounts(updated, false);
     }
 

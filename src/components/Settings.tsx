@@ -488,7 +488,7 @@ export default function SettingsComponent({ settings, onUpdateSettings, onReload
                   id="input-settings-admin-password"
                 />
                 <p className="text-[10px] text-slate-400 mt-1 leading-normal">
-                  Gunakan kredensial ini untuk login ke Portal Guru selanjutnya. <strong>Catatan: Pada menu pengaturan ini, hanya pengaturan Username, Password, dan Jumlah Siswa yang masuk ke Dasbor Super Admin.</strong> Data aplikasi maupun URL Spreadsheet mandiri guru tetap terpisah dan berdiri sendiri.
+                  Gunakan kredensial ini untuk login ke Portal Guru selanjutnya. <strong>Catatan: Pada menu pengaturan ini, hanya pengaturan Username, Password, Email, dan Jumlah Siswa yang masuk ke Dasbor Super Admin.</strong> Data aplikasi maupun URL Spreadsheet mandiri guru tetap terpisah dan berdiri sendiri.
                 </p>
               </div>
 

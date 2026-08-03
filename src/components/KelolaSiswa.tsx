@@ -886,10 +886,19 @@ export default function KelolaSiswa({
                 </div>
                 <h3 className="font-bold text-slate-800 text-sm">Konfirmasi Hapus Siswa</h3>
               </div>
+              <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-amber-800 text-xs space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                  <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                  <span>Peringatan Penghapusan</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  Untuk mencegah kesalahan pengguna, pastikan data yang dipilih sudah benar. Tindakan ini tidak dapat dibatalkan.
+                </p>
+              </div>
               <p className="text-xs text-slate-600 leading-relaxed">
                 Apakah Anda yakin ingin menghapus data siswa <strong>{siswaToDelete.nama}</strong> (NISN: {siswaToDelete.nis})?
                 <br /><br />
-                Tindakan ini juga akan menghapus data nilai &amp; presensi terkait jika ada.
+                <span className="text-rose-600 font-semibold">* Semua data nilai &amp; presensi siswa ini akan ikut terhapus.</span>
               </p>
               <div className="flex gap-2 justify-end pt-2">
                 <button
