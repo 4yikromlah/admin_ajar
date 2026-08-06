@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KeyRound, X, GraduationCap, LayoutDashboard } from 'lucide-react';
+import { KeyRound, X, GraduationCap, LayoutDashboard, Clock } from 'lucide-react';
 
 // Import subkomponen pendukung
 import Sidebar from './components/Sidebar';
@@ -80,10 +80,6 @@ export default function App() {
     };
   }, []);
 
-  // State Navigasi
-  const [currentMenu, setCurrentMenu] = useState('dashboard');
-  const [mobileOpen, setMobileOpen] = useState(false);
-
   // State Portal Siswa
   const [loggedSiswa, setLoggedSiswa] = useState<Siswa | null>(() => {
     const saved = localStorage.getItem('loggedSiswa');
@@ -96,6 +92,100 @@ export default function App() {
     }
     return null;
   });
+
+  // ============================================================================
+  // AUTO-LOGOUT & IDLE ACTIVITY MONITORING (30 MENIT INAKTIVITAS)
+  // ============================================================================
+  const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 Menit
+  const IDLE_WARNING_MS = 29 * 60 * 1000; // 29 Menit (Peringatan 60 detik)
+
+  const [autoLogoutNotice, setAutoLogoutNotice] = useState<string | null>(null);
+  const [showIdleWarningModal, setShowIdleWarningModal] = useState<boolean>(false);
+  const [idleCountdown, setIdleCountdown] = useState<number>(60);
+  const lastActivityRef = useRef<number>(Date.now());
+
+  const handleKeepSessionActive = () => {
+    const now = Date.now();
+    lastActivityRef.current = now;
+    localStorage.setItem('smasa_last_activity', now.toString());
+    setShowIdleWarningModal(false);
+  };
+
+  const executeAutoLogout = () => {
+    setShowIdleWarningModal(false);
+    const msg = '🔒 Sesi Anda telah otomatis berakhir karena tidak ada aktivitas selama 30 menit demi keamanan data. Silakan login kembali.';
+    setAutoLogoutNotice(msg);
+
+    if (loggedSiswa) {
+      localStorage.removeItem('loggedSiswa');
+      localStorage.removeItem('loggedTeacherUsername');
+      setLoggedSiswa(null);
+    } else if (isTeacherLoggedIn) {
+      localStorage.removeItem('isTeacherLoggedIn');
+      localStorage.removeItem('loggedTeacherUsername');
+      setIsTeacherLoggedIn(false);
+    } else if (isSuperAdminLoggedIn) {
+      localStorage.removeItem('isSuperAdminLoggedIn');
+      setIsSuperAdminLoggedIn(false);
+    }
+  };
+
+  useEffect(() => {
+    const isLoggedIn = isTeacherLoggedIn || isSuperAdminLoggedIn || loggedSiswa !== null;
+    if (!isLoggedIn) {
+      setShowIdleWarningModal(false);
+      return;
+    }
+
+    // Set timestamp aktivitas awal jika belum ada
+    const initialNow = Date.now();
+    lastActivityRef.current = initialNow;
+    if (!localStorage.getItem('smasa_last_activity')) {
+      localStorage.setItem('smasa_last_activity', initialNow.toString());
+    }
+
+    // Listener aktivitas pengguna
+    let lastThrottle = 0;
+    const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastThrottle > 1000) { // Throttle per 1 detik
+        lastThrottle = now;
+        lastActivityRef.current = now;
+        localStorage.setItem('smasa_last_activity', now.toString());
+        setShowIdleWarningModal(false);
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach((evt) => window.addEventListener(evt, handleUserActivity, { passive: true }));
+
+    // Cek durasi inaktivitas setiap 1 detik
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const storedLastActivityStr = localStorage.getItem('smasa_last_activity');
+      const storedLastActivity = storedLastActivityStr ? parseInt(storedLastActivityStr, 10) : lastActivityRef.current;
+      const idleTime = now - (isNaN(storedLastActivity) ? lastActivityRef.current : storedLastActivity);
+
+      if (idleTime >= IDLE_TIMEOUT_MS) {
+        executeAutoLogout();
+      } else if (idleTime >= IDLE_WARNING_MS) {
+        setShowIdleWarningModal(true);
+        const secondsLeft = Math.max(0, Math.ceil((IDLE_TIMEOUT_MS - idleTime) / 1000));
+        setIdleCountdown(secondsLeft);
+      } else {
+        setShowIdleWarningModal(false);
+      }
+    }, 1000);
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, handleUserActivity));
+      clearInterval(timer);
+    };
+  }, [isTeacherLoggedIn, isSuperAdminLoggedIn, loggedSiswa]);
+
+  // State Navigasi
+  const [currentMenu, setCurrentMenu] = useState('dashboard');
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // State Manajemen Data (Dikelola dengan Central State + LocalStorage)
   const [siswaList, setSiswaList] = useState<Siswa[]>(() => loadSiswa());
@@ -557,9 +647,67 @@ export default function App() {
     }
   };
 
+  const renderIdleWarningModal = () => (
+    <AnimatePresence>
+      {showIdleWarningModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 space-y-6 text-center relative overflow-hidden"
+          >
+            <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto shadow-inner">
+              <Clock size={32} className="animate-pulse" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider">
+                Peringatan Keamanan Inaktivitas
+              </span>
+              <h3 className="text-lg font-black text-slate-800 tracking-tight">
+                Sesi Anda Hampir Berakhir
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                Sistem mendeteksi tidak ada aktivitas selama 29 menit. Untuk keamanan data di perangkat publik atau lab sekolah, Anda akan otomatis keluar dalam:
+              </p>
+            </div>
+
+            <div className="py-3 px-6 bg-amber-50 rounded-2xl border border-amber-200 inline-block font-mono font-black text-2xl text-amber-700">
+              {idleCountdown} detik
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleKeepSessionActive}
+                className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-black uppercase tracking-wider shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                Tetap Masuk
+              </button>
+              <button
+                type="button"
+                onClick={executeAutoLogout}
+                className="py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+              >
+                Keluar Sekarang
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   if (loggedSiswa) {
     return (
-      <div className="min-h-screen bg-neu-bg p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full transition-all duration-300">
+      <div className="min-h-screen bg-neu-bg p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full transition-all duration-300 relative">
+        {renderIdleWarningModal()}
         <SiswaDashboard
           siswa={loggedSiswa}
           nilaiList={nilaiList}
@@ -695,10 +843,13 @@ export default function App() {
 
   if (isSuperAdminLoggedIn && !isTeacherLoggedIn) {
     return (
-      <SuperAdminDashboard
-        onLogout={handleSuperAdminLogout}
-        onImpersonateTeacher={handleImpersonateTeacher}
-      />
+      <div className="relative">
+        {renderIdleWarningModal()}
+        <SuperAdminDashboard
+          onLogout={handleSuperAdminLogout}
+          onImpersonateTeacher={handleImpersonateTeacher}
+        />
+      </div>
     );
   }
 
@@ -707,6 +858,8 @@ export default function App() {
       <Login
         siswaList={siswaList}
         settings={settings}
+        autoLogoutNotice={autoLogoutNotice}
+        onClearAutoLogoutNotice={() => setAutoLogoutNotice(null)}
         onTeacherLoginSuccess={handleTeacherLoginSuccess}
         onSuperAdminLoginSuccess={handleSuperAdminLoginSuccess}
         onStudentLoginSuccess={async (siswa, teacherUsername) => {
@@ -739,6 +892,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neu-bg flex flex-col relative">
+      {renderIdleWarningModal()}
       {/* Impersonation Warning Banner */}
       {isSuperAdminLoggedIn && (
         <div className="bg-rose-600 text-white text-xs font-bold py-2.5 px-4 flex flex-col sm:flex-row justify-between items-center gap-2 z-50 shadow-md">

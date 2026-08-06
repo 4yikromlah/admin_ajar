@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School, Mail, ArrowLeft, Lock, BellRing, Search, CheckCircle2, X } from 'lucide-react';
 import { Siswa, AppSettings, TeacherAccount } from '../types';
-import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchSuperAdminSpreadsheetUrlFromServer, fetchSuperAdminConfigFromServer, pullSuperAdminFromGoogleSheets, getTeacherSettings, normalizeSiswaList } from '../data';
+import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchTeachersFromServer, fetchSuperAdminSpreadsheetUrlFromServer, fetchSuperAdminConfigFromServer, pullSuperAdminFromGoogleSheets, getTeacherSettings, normalizeSiswaList } from '../data';
 import { ToastNotification, ToastProps } from './ToastNotification';
 
 interface LoginProps {
@@ -16,11 +16,13 @@ interface LoginProps {
   onSuperAdminLoginSuccess: () => void;
   onStudentLoginSuccess: (siswa: Siswa, teacherUsername: string) => void;
   settings: AppSettings;
+  autoLogoutNotice?: string | null;
+  onClearAutoLogoutNotice?: () => void;
 }
 
 type LoginRole = 'guru' | 'siswa';
 
-export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLoginSuccess, onStudentLoginSuccess, settings }: LoginProps) {
+export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLoginSuccess, onStudentLoginSuccess, settings, autoLogoutNotice, onClearAutoLogoutNotice }: LoginProps) {
   const [role, setRole] = useState<LoginRole>('guru');
   
   // State for login success animation and details display
@@ -321,13 +323,17 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-sync on mount to pull latest teachers from centralized spreadsheet database
+  // Auto-sync on mount to pull latest teachers from centralized spreadsheet database & server
   React.useEffect(() => {
     const syncTeachers = async () => {
       try {
-        await pullSuperAdminFromGoogleSheets();
-        const updated = loadTeacherAccounts();
-        setTeachersList(updated);
+        const fresh = await fetchTeachersFromServer();
+        if (fresh && fresh.length > 0) {
+          setTeachersList(fresh);
+        } else {
+          await pullSuperAdminFromGoogleSheets();
+          setTeachersList(loadTeacherAccounts());
+        }
       } catch (err) {
         console.warn("[Login Sync Teachers Error] Gagal menyelaraskan daftar guru otomatis:", err);
       }
@@ -336,12 +342,15 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
   }, []);
 
   const uniqueSchools = Array.from(new Set(teachersList.map(t => t.asalSekolah).filter(Boolean))) as string[];
-  if (uniqueSchools.length === 0) {
-    uniqueSchools.push("MGMP INFORMATIKA SMA BONDOWOSO");
+  if (!uniqueSchools.includes("MGMP INFORMATIKA SMA BONDOWOSO")) {
+    uniqueSchools.unshift("MGMP INFORMATIKA SMA BONDOWOSO");
+  }
+  if (!uniqueSchools.includes("-- Semua Sekolah --")) {
+    uniqueSchools.unshift("-- Semua Sekolah --");
   }
 
   const [selectedSchool, setSelectedSchool] = useState(() => {
-    return uniqueSchools.includes("MGMP INFORMATIKA SMA BONDOWOSO") ? "MGMP INFORMATIKA SMA BONDOWOSO" : (uniqueSchools[0] || "MGMP INFORMATIKA SMA BONDOWOSO");
+    return uniqueSchools.includes("-- Semua Sekolah --") ? "-- Semua Sekolah --" : (uniqueSchools[0] || "-- Semua Sekolah --");
   });
 
   const handleGuruSubmit = async (e: React.FormEvent) => {
@@ -860,18 +869,29 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     const cleanUsername = siswaUsername.trim().toLowerCase();
     const cleanPassword = siswaPassword.trim();
 
-    // 1. Refresh teacher accounts from central cloud database
+    // 1. Refresh teacher accounts from central cloud database and server
     try {
-      await pullSuperAdminFromGoogleSheets();
-    } catch (e) {}
+      const freshTeachers = await fetchTeachersFromServer();
+      if (freshTeachers && freshTeachers.length > 0) {
+        setTeachersList(freshTeachers);
+      }
+    } catch (e) {
+      try {
+        await pullSuperAdminFromGoogleSheets();
+      } catch (err) {}
+    }
 
     const teachers = loadTeacherAccounts();
     const cleanSchoolName = (selectedSchool || '').trim().toLowerCase();
+    const isAllSchoolsSelected = !selectedSchool || selectedSchool === '-- semua sekolah --';
 
     // FILTRASI AWAL: Saring guru berdasarkan sekolah yang dipilih siswa di halaman login
-    const matchedTeachers = teachers.filter(
-      (t) => (t.asalSekolah || '').trim().toLowerCase() === cleanSchoolName
-    );
+    const matchedTeachers = !isAllSchoolsSelected
+      ? teachers.filter((t) => {
+          const tSchool = (t.asalSekolah || '').trim().toLowerCase();
+          return tSchool === cleanSchoolName || tSchool.includes(cleanSchoolName) || cleanSchoolName.includes(tSchool);
+        })
+      : teachers;
 
     let found: Siswa | null = null;
     let matchedTeacherUsername = '';
@@ -887,7 +907,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     };
 
     // Urutan Filtrasi: 1. Guru dari sekolah terpilih -> 2. Guru lain sebagai cadangan
-    const targetTeachers = matchedTeachers.length > 0 
+    const targetTeachers = (matchedTeachers.length > 0 && !isAllSchoolsSelected)
       ? [...matchedTeachers, ...teachers.filter(t => !matchedTeachers.includes(t))]
       : teachers;
 
@@ -932,7 +952,35 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       }
     }
 
-    // 3. Fallback pencarian lokal jika offline atau Google Spreadsheet tidak merespons
+    // 3. Jika belum ketemu & ada central Super Admin Spreadsheet URL, coba unduh live dari Super Admin Spreadsheet
+    if (!found) {
+      try {
+        const centralUrl = await fetchSuperAdminSpreadsheetUrlFromServer();
+        if (centralUrl) {
+          const res = await fetch('/api/gas-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: centralUrl, method: 'GET' })
+          });
+          if (res.ok) {
+            const db = await res.json();
+            if (db && typeof db === 'object') {
+              const rawSiswa = db.siswa || db.siswaList || db.Siswa || db.DataSiswa;
+              if (Array.isArray(rawSiswa)) {
+                const normalized = normalizeSiswaList(rawSiswa);
+                const match = checkStudentInList(normalized);
+                if (match) {
+                  found = match;
+                  matchedTeacherUsername = '';
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {}
+    }
+
+    // 4. Fallback pencarian lokal jika offline atau Google Spreadsheet tidak merespons
     if (!found) {
       for (const teacher of targetTeachers) {
         const scopedKey = `smasa_${teacher.username}_siswa`;
@@ -951,7 +999,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       }
     }
 
-    // 4. Fallback pencarian di daftar default / prop
+    // 5. Fallback pencarian di daftar default / prop
     if (!found) {
       const match = checkStudentInList(siswaList);
       if (match) {
@@ -968,7 +1016,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         tSettings = getTeacherSettings(matchedTeacherUsername);
       }
 
-      const sName = tSettings?.kopSekolah || selectedSchool || 'MGMP INFORMATIKA BONDOWOSO';
+      const sName = tSettings?.kopSekolah || (selectedSchool && selectedSchool !== '-- Semua Sekolah --' ? selectedSchool : '') || 'MGMP INFORMATIKA BONDOWOSO';
       const sLogo = tSettings?.logoSekolah || '';
       const sMataPelajaran = tSettings?.mataPelajaran || 'Informatika';
       const loginTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
@@ -994,7 +1042,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         onStudentLoginSuccess(studentData, teacherUser);
       }, 2200);
     } else {
-      setSiswaError(`NIS/Username atau Kata Sandi Siswa tidak ditemukan atau tidak cocok untuk pilihan sekolah "${selectedSchool}".`);
+      setSiswaError(`NIS/Username atau Kata Sandi Siswa tidak ditemukan atau tidak cocok. Pastikan NIS/Username dan Kata Sandi sudah benar.`);
       setIsSiswaLoading(false);
     }
   };
@@ -1091,6 +1139,29 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
             </p>
           </div>
         </div>
+
+        {/* Auto Logout Notice Banner */}
+        {autoLogoutNotice && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs font-bold flex items-center justify-between gap-3 shadow-sm"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg">🔒</span>
+              <p className="leading-snug">{autoLogoutNotice}</p>
+            </div>
+            {onClearAutoLogoutNotice && (
+              <button
+                onClick={onClearAutoLogoutNotice}
+                className="p-1.5 rounded-lg hover:bg-amber-200/50 text-amber-800 transition-colors cursor-pointer shrink-0"
+                title="Tutup Notifikasi"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </motion.div>
+        )}
 
         {resetToken && resetUsername ? (
           <div className="space-y-6">

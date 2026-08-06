@@ -190,7 +190,7 @@ export async function pushToGoogleSheets(): Promise<boolean> {
       }
       return t;
     });
-    saveTeacherAccounts(updated, true); // Save to local teachers cache without touching Super Admin
+    saveTeacherAccounts(updated, false); // Push updated spreadsheetUrl to central server and Super Admin Spreadsheet
   }
 
   const db = {
