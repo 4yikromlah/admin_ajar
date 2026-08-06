@@ -115,6 +115,8 @@ export default function App() {
     setShowIdleWarningModal(false);
     const msg = '🔒 Sesi Anda telah otomatis berakhir karena tidak ada aktivitas selama 30 menit demi keamanan data. Silakan login kembali.';
     setAutoLogoutNotice(msg);
+    localStorage.removeItem('smasa_last_activity');
+    lastActivityRef.current = Date.now();
 
     if (loggedSiswa) {
       localStorage.removeItem('loggedSiswa');
@@ -137,10 +139,13 @@ export default function App() {
       return;
     }
 
-    // Set timestamp aktivitas awal jika belum ada
+    // Set timestamp aktivitas awal jika belum ada atau jika timestamp yang tersimpan sudah kadaluarsa (>= 30 menit)
     const initialNow = Date.now();
     lastActivityRef.current = initialNow;
-    if (!localStorage.getItem('smasa_last_activity')) {
+    const storedLastActivityStr = localStorage.getItem('smasa_last_activity');
+    const storedLastActivity = storedLastActivityStr ? parseInt(storedLastActivityStr, 10) : NaN;
+
+    if (isNaN(storedLastActivity) || (initialNow - storedLastActivity >= IDLE_TIMEOUT_MS)) {
       localStorage.setItem('smasa_last_activity', initialNow.toString());
     }
 
@@ -723,6 +728,8 @@ export default function App() {
           onLogout={() => {
             localStorage.removeItem('loggedSiswa');
             localStorage.removeItem('loggedTeacherUsername');
+            localStorage.removeItem('smasa_last_activity');
+            lastActivityRef.current = Date.now();
             setLoggedSiswa(null);
             setTimeout(() => {
               reloadAllStates();
@@ -744,6 +751,8 @@ export default function App() {
   const handleTeacherLogout = () => {
     localStorage.removeItem('isTeacherLoggedIn');
     localStorage.removeItem('loggedTeacherUsername');
+    localStorage.removeItem('smasa_last_activity');
+    lastActivityRef.current = Date.now();
     setIsTeacherLoggedIn(false);
     setTimeout(() => {
       reloadAllStates();
@@ -794,10 +803,15 @@ export default function App() {
 
   const handleSuperAdminLogout = () => {
     localStorage.removeItem('isSuperAdminLoggedIn');
+    localStorage.removeItem('smasa_last_activity');
+    lastActivityRef.current = Date.now();
     setIsSuperAdminLoggedIn(false);
   };
 
   const handleImpersonateTeacher = (username: string) => {
+    const now = Date.now();
+    lastActivityRef.current = now;
+    localStorage.setItem('smasa_last_activity', now.toString());
     localStorage.setItem('loggedTeacherUsername', username);
     localStorage.setItem('isTeacherLoggedIn', 'true');
     setIsTeacherLoggedIn(true);
@@ -809,6 +823,9 @@ export default function App() {
   const handleReturnToSuperAdmin = () => {
     localStorage.removeItem('isTeacherLoggedIn');
     localStorage.removeItem('loggedTeacherUsername');
+    const now = Date.now();
+    lastActivityRef.current = now;
+    localStorage.setItem('smasa_last_activity', now.toString());
     setIsTeacherLoggedIn(false);
     setTimeout(() => {
       reloadAllStates();
@@ -816,6 +833,9 @@ export default function App() {
   };
 
   const handleTeacherLoginSuccess = async (username: string) => {
+    const now = Date.now();
+    lastActivityRef.current = now;
+    localStorage.setItem('smasa_last_activity', now.toString());
     localStorage.setItem('loggedTeacherUsername', username);
     localStorage.setItem('isTeacherLoggedIn', 'true');
     setIsTeacherLoggedIn(true);
@@ -825,9 +845,9 @@ export default function App() {
       const success = await pullFromGoogleSheets();
       if (success) {
         reloadAllStates();
-        const now = new Date();
-        setLastSyncTime(now);
-        localStorage.setItem('smasa_last_sync_time', now.toISOString());
+        const nowSync = new Date();
+        setLastSyncTime(nowSync);
+        localStorage.setItem('smasa_last_sync_time', nowSync.toISOString());
       }
     } catch (e) {
       console.warn("Gagal auto sync saat login guru:", e);
@@ -837,6 +857,9 @@ export default function App() {
   };
 
   const handleSuperAdminLoginSuccess = () => {
+    const now = Date.now();
+    lastActivityRef.current = now;
+    localStorage.setItem('smasa_last_activity', now.toString());
     localStorage.setItem('isSuperAdminLoggedIn', 'true');
     setIsSuperAdminLoggedIn(true);
   };
@@ -863,6 +886,9 @@ export default function App() {
         onTeacherLoginSuccess={handleTeacherLoginSuccess}
         onSuperAdminLoginSuccess={handleSuperAdminLoginSuccess}
         onStudentLoginSuccess={async (siswa, teacherUsername) => {
+          const now = Date.now();
+          lastActivityRef.current = now;
+          localStorage.setItem('smasa_last_activity', now.toString());
           if (teacherUsername) {
             localStorage.setItem('loggedTeacherUsername', teacherUsername);
           } else {
