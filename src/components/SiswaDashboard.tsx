@@ -31,7 +31,8 @@ import {
   Check,
   Sparkles,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Siswa, Nilai, Presensi, Pembelajaran, Pengumuman, AppSettings, Rangkuman } from '../types';
@@ -137,6 +138,7 @@ export default function SiswaDashboard({
   const [tokenInput, setTokenInput] = useState('');
   const [presensiError, setPresensiError] = useState('');
   const [presensiSuccess, setPresensiSuccess] = useState(false);
+  const [presensiToast, setPresensiToast] = useState<string | null>(null);
   const [scannedTime, setScannedTime] = useState('');
   const [isScanningActive, setIsScanningActive] = useState(false);
 
@@ -147,41 +149,61 @@ export default function SiswaDashboard({
     }
   }, [activeTab]);
 
-  const handleVerifyToken = (tokenToVerify?: string) => {
+  const handleVerifyToken = async (tokenToVerify?: string) => {
     setPresensiError('');
     const code = (tokenToVerify || tokenInput).trim().toUpperCase();
-    if (!code) {
-      setPresensiError('Silakan masukkan token kode presensi terlebih dahulu.');
-      return;
-    }
 
     try {
-      const activeSessionStr = localStorage.getItem('smasa_active_qr_session');
-      if (!activeSessionStr) {
-        setPresensiError('Tidak ada sesi presensi QR yang aktif saat ini. Mintalah Guru untuk membuka sesi presensi QR di depan kelas.');
-        return;
+      let session: any = null;
+
+      // 1. Ambil sesi aktif dari server terlebih dahulu (cross-device)
+      try {
+        const res = await fetch(`/api/qr-session/active?kelas=${encodeURIComponent(siswa.kelas)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.session) {
+            session = data.session;
+          }
+        }
+      } catch (err) {}
+
+      // 2. Fallback ke localStorage jika offline
+      if (!session) {
+        const activeSessionStr = localStorage.getItem('smasa_active_qr_session');
+        if (activeSessionStr) {
+          try {
+            session = JSON.parse(activeSessionStr);
+          } catch (e) {}
+        }
       }
 
-      const session = JSON.parse(activeSessionStr);
       if (!session || !session.token) {
-        setPresensiError('Data sesi tidak valid. Silakan coba lagi.');
+        setPresensiError('Tidak ada sesi presensi QR yang aktif untuk kelas Anda saat ini. Mintalah Guru untuk membuka sesi presensi QR.');
         return;
       }
 
-      // 1. Validasi waktu kedaluwarsa sesi
+      const validToken = session.token.trim().toUpperCase();
+
+      // Jika memverifikasi dari input manual dan tidak ada kodenya
+      if (!tokenToVerify && !code) {
+        setPresensiError('Silakan masukkan token kode presensi terlebih dahulu.');
+        return;
+      }
+
+      // Validasi waktu kedaluwarsa sesi
       if (session.expiresAt <= Date.now()) {
         setPresensiError('Sesi presensi QR Code ini telah berakhir/kedaluwarsa. Mintalah Guru Anda untuk memperpanjang sesi.');
         return;
       }
 
-      // 2. Validasi kesesuaian kelas
-      if (session.kelas !== siswa.kelas) {
+      // Validasi kesesuaian kelas
+      if (session.kelas !== siswa.kelas && String(session.kelas).toLowerCase() !== String(siswa.kelas).toLowerCase()) {
         setPresensiError(`Sesi presensi ini hanya berlaku untuk kelas ${session.kelas}. Kelas Anda tercatat sebagai kelas ${siswa.kelas}.`);
         return;
       }
 
-      // 3. Validasi token cocok
-      if (session.token !== code) {
+      // Validasi token cocok
+      if (!tokenToVerify && code !== validToken) {
         setPresensiError('Kode token presensi salah atau tidak cocok dengan yang tertera di layar proyektor Guru.');
         return;
       }
@@ -198,7 +220,7 @@ export default function SiswaDashboard({
       const list: Presensi[] = loadPresensi();
 
       // Cek apakah siswa sudah presensi hari ini
-      const alreadyPresensi = list.some(p => p.siswaId === siswa.id && p.tanggal === todayStr);
+      const alreadyPresensi = list.some(p => p.siswaId === siswa.id && p.tanggal === todayStr && p.status === 'Hadir');
       if (alreadyPresensi) {
         setPresensiError('Anda sudah melakukan presensi masuk untuk hari ini.');
         return;
@@ -222,10 +244,23 @@ export default function SiswaDashboard({
         onSavePresensi(updatedList);
       }
 
+      // Kirim data presensi ke Server untuk sinkronisasi real-time lintas perangkat
+      try {
+        await fetch('/api/qr-presensi/checkin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ presensi: newPresensi })
+        });
+      } catch (err) {
+        console.warn("[QR Checkin Server Sync Error]", err);
+      }
+
       setScannedTime(nowTimeStr);
       setPresensiSuccess(true);
       setIsScanningActive(false);
       setTokenInput('');
+      setPresensiToast(`Presensi QR Berhasil! Kehadiran Anda (${siswa.kelas}) telah tercatat pukul ${nowTimeStr} WIB.`);
+      setTimeout(() => setPresensiToast(null), 5000);
     } catch (e) {
       console.error(e);
       setPresensiError('Terjadi kesalahan saat memproses presensi Anda.');
@@ -246,37 +281,18 @@ export default function SiswaDashboard({
         video.play().catch(e => console.error(e));
       }
       
-      setTimeout(() => {
+      setTimeout(async () => {
         if (stream) {
           stream.getTracks().forEach(track => track.stop());
         }
-        
-        const activeSessionStr = localStorage.getItem('smasa_active_qr_session');
-        if (activeSessionStr) {
-          const session = JSON.parse(activeSessionStr);
-          if (session && session.token) {
-            handleVerifyToken(session.token);
-            return;
-          }
-        }
-        setIsScanningActive(false);
-        setPresensiError('Gagal mendeteksi QR Code presensi guru. Coba posisikan kamera lebih dekat atau masukkan Token secara manual.');
+        await handleVerifyToken();
       }, 3500);
 
     } catch (e) {
       console.warn("Camera access denied or failed for scanner, falling back to simulated validation.");
-      setTimeout(() => {
-        const activeSessionStr = localStorage.getItem('smasa_active_qr_session');
-        if (activeSessionStr) {
-          const session = JSON.parse(activeSessionStr);
-          if (session && session.token) {
-            handleVerifyToken(session.token);
-            return;
-          }
-        }
-        setIsScanningActive(false);
-        setPresensiError('Gagal mendeteksi sesi presensi kelas Anda. Pastikan guru Anda telah mengaktifkan sesi presensi QR.');
-      }, 3000);
+      setTimeout(async () => {
+        await handleVerifyToken();
+      }, 2500);
     }
   };
 
@@ -511,7 +527,32 @@ export default function SiswaDashboard({
   };
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20 relative">
+      {/* Toast Notifikasi Presensi QR Berhasil */}
+      <AnimatePresence>
+        {presensiToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-6 right-6 z-50 p-4 rounded-2xl bg-emerald-600 text-white shadow-2xl border border-emerald-400/50 flex items-center gap-3.5 max-w-md"
+          >
+            <div className="w-10 h-10 rounded-xl bg-white text-emerald-600 flex items-center justify-center shrink-0 shadow-md">
+              <CheckCircle2 size={24} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="text-[10px] font-black text-emerald-100 uppercase tracking-widest block">Notifikasi Presensi QR</span>
+              <p className="text-xs font-bold text-white mt-0.5 leading-snug">{presensiToast}</p>
+            </div>
+            <button
+              onClick={() => setPresensiToast(null)}
+              className="p-1 rounded-lg hover:bg-emerald-700 text-emerald-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* 1. TOP HEADER NAVIGATION BAR */}
       <div className="glass p-4 rounded-3xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-white/40 shadow-sm relative overflow-hidden">
         <div className="absolute top-[-40%] right-[-10%] w-48 h-48 bg-blue-500/10 rounded-full blur-3xl -z-10" />

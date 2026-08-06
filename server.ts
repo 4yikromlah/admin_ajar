@@ -90,6 +90,49 @@ try {
   console.error('[Server] Failed to load/save TEACHERS_FILE:', e);
 }
 
+// Server-side persistent Presensi Database & Active QR Sessions
+const PRESENSI_FILE = path.join(process.cwd(), 'presensi_db.json');
+const QR_SESSION_FILE = path.join(process.cwd(), 'qr_sessions_db.json');
+
+let serverPresensiRecords: any[] = [];
+let serverActiveQrSessions: any[] = [];
+
+try {
+  if (fs.existsSync(PRESENSI_FILE)) {
+    const raw = fs.readFileSync(PRESENSI_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) serverPresensiRecords = parsed;
+  }
+} catch (e) {
+  console.error('[Server] Failed to load PRESENSI_FILE:', e);
+}
+
+try {
+  if (fs.existsSync(QR_SESSION_FILE)) {
+    const raw = fs.readFileSync(QR_SESSION_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) serverActiveQrSessions = parsed;
+  }
+} catch (e) {
+  console.error('[Server] Failed to load QR_SESSION_FILE:', e);
+}
+
+const savePresensiToDisk = () => {
+  try {
+    fs.writeFileSync(PRESENSI_FILE, JSON.stringify(serverPresensiRecords, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[Server] Failed to write PRESENSI_FILE:', e);
+  }
+};
+
+const saveQrSessionsToDisk = () => {
+  try {
+    fs.writeFileSync(QR_SESSION_FILE, JSON.stringify(serverActiveQrSessions, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[Server] Failed to write QR_SESSION_FILE:', e);
+  }
+};
+
 // ----------------------------------------------------------------------------
 // API ROUTES (Must be defined BEFORE Vite middleware)
 // ----------------------------------------------------------------------------
@@ -167,6 +210,112 @@ app.post('/api/teachers', async (req, res) => {
     }
   }
   res.json({ status: 'success', teachers: serverTeachers });
+});
+
+// ----------------------------------------------------------------------------
+// Active QR Session Endpoints (Cross-Device Real-Time Sync)
+// ----------------------------------------------------------------------------
+app.get('/api/qr-session/active', (req, res) => {
+  const { kelas } = req.query;
+  const now = Date.now();
+  serverActiveQrSessions = serverActiveQrSessions.filter(s => s.expiresAt > now);
+  saveQrSessionsToDisk();
+
+  if (kelas) {
+    const targetKelas = String(kelas).trim().toLowerCase();
+    const active = serverActiveQrSessions.find(s => String(s.kelas).trim().toLowerCase() === targetKelas);
+    return res.json({ status: 'success', session: active || null });
+  }
+
+  return res.json({ status: 'success', sessions: serverActiveQrSessions });
+});
+
+app.post('/api/qr-session', (req, res) => {
+  const { session } = req.body;
+  if (!session || !session.kelas || !session.token) {
+    return res.status(400).json({ status: 'error', error: 'Data sesi tidak lengkap' });
+  }
+
+  const targetKelas = String(session.kelas).trim().toLowerCase();
+  serverActiveQrSessions = serverActiveQrSessions.filter(s => String(s.kelas).trim().toLowerCase() !== targetKelas);
+  serverActiveQrSessions.push(session);
+  saveQrSessionsToDisk();
+
+  return res.json({ status: 'success', session });
+});
+
+app.delete('/api/qr-session', (req, res) => {
+  const kelas = req.query.kelas || req.body?.kelas;
+  if (kelas) {
+    const targetKelas = String(kelas).trim().toLowerCase();
+    serverActiveQrSessions = serverActiveQrSessions.filter(s => String(s.kelas).trim().toLowerCase() !== targetKelas);
+    saveQrSessionsToDisk();
+  } else {
+    serverActiveQrSessions = [];
+    saveQrSessionsToDisk();
+  }
+  return res.json({ status: 'success' });
+});
+
+// ----------------------------------------------------------------------------
+// QR Presensi Checkin & Live List Endpoints
+// ----------------------------------------------------------------------------
+app.post('/api/qr-presensi/checkin', (req, res) => {
+  const { presensi } = req.body;
+  if (!presensi || !presensi.siswaId || !presensi.tanggal) {
+    return res.status(400).json({ status: 'error', error: 'Data presensi tidak lengkap' });
+  }
+
+  const existsIdx = serverPresensiRecords.findIndex(
+    p => p.siswaId === presensi.siswaId && p.tanggal === presensi.tanggal
+  );
+  if (existsIdx > -1) {
+    serverPresensiRecords[existsIdx] = { ...serverPresensiRecords[existsIdx], ...presensi };
+  } else {
+    serverPresensiRecords.push(presensi);
+  }
+  savePresensiToDisk();
+
+  return res.json({ status: 'success', presensi });
+});
+
+app.get('/api/qr-presensi/list', (req, res) => {
+  const { tanggal, kelas } = req.query;
+  let result = [...serverPresensiRecords];
+
+  if (tanggal) {
+    result = result.filter(p => p.tanggal === String(tanggal));
+  }
+  if (kelas) {
+    const k = String(kelas).trim().toLowerCase();
+    result = result.filter(p => String(p.siswaKelas || p.kelas || '').trim().toLowerCase() === k);
+  }
+
+  return res.json({ status: 'success', records: result });
+});
+
+app.post('/api/qr-presensi/sync', (req, res) => {
+  const { records } = req.body;
+  if (Array.isArray(records)) {
+    records.forEach(rec => {
+      if (rec && rec.siswaId && rec.tanggal) {
+        const idx = serverPresensiRecords.findIndex(
+          p => p.siswaId === rec.siswaId && p.tanggal === rec.tanggal
+        );
+        if (idx > -1) {
+          serverPresensiRecords[idx] = { ...serverPresensiRecords[idx], ...rec };
+        } else {
+          serverPresensiRecords.push(rec);
+        }
+      }
+    });
+    savePresensiToDisk();
+  }
+  return res.json({ status: 'success', count: serverPresensiRecords.length, records: serverPresensiRecords });
+});
+
+app.get('/api/presensi', (req, res) => {
+  return res.json({ status: 'success', records: serverPresensiRecords });
 });
 
 app.get('/api/superadmin-url', (req, res) => {

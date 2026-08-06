@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Siswa, Presensi, AttendanceStatus } from '../types';
+import { loadPresensi } from '../data';
 
 interface KelolaPresensiProps {
   presensiList: Presensi[];
@@ -45,8 +46,10 @@ export default function KelolaPresensi({
   const [selectedTanggal, setSelectedTanggal] = useState(todayStr);
   const [selectedKelas, setSelectedKelas] = useState('XI-MIPA-1');
   const [searchTerm, setSearchTerm] = useState('');
+  const [scanFilter, setScanFilter] = useState<'all' | 'scanned' | 'unscanned'>('all');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [localStatuses, setLocalStatuses] = useState<Record<string, AttendanceStatus>>({});
+  const [checkinNotif, setCheckinNotif] = useState<string | null>(null);
 
   // Mode: manual (pencatatan manual) vs qr (otomatis berbasis QR code)
   const [activeMode, setActiveMode] = useState<'manual' | 'qr'>('manual');
@@ -87,66 +90,95 @@ export default function KelolaPresensi({
     return () => clearInterval(interval);
   }, [qrActiveSession]);
 
-  // Sync / poll local storage checkins to live update list in real-time
+  // Sync / poll local storage & server checkins to live update list in real-time
   useEffect(() => {
-    if (!qrActiveSession) return;
-
-    const syncCheckins = () => {
+    const syncCheckins = async () => {
       try {
-        const savedPresensi = localStorage.getItem('smasa_presensi');
-        const list: Presensi[] = savedPresensi ? JSON.parse(savedPresensi) : [];
-        
-        // Find if there are any new QR-based presensi for this class and date
-        const qrPresensi = list.filter(p => 
-          p.tanggal === qrActiveSession.tanggal &&
-          p.siswaKelas === qrActiveSession.kelas &&
-          p.metode === 'QR Code'
-        );
+        const curTanggal = qrActiveSession?.tanggal || selectedTanggal;
+        const curKelas = qrActiveSession?.kelas || selectedKelas;
 
-        if (qrPresensi.length > 0) {
+        let serverRecords: Presensi[] = [];
+        try {
+          const res = await fetch(`/api/qr-presensi/list?tanggal=${encodeURIComponent(curTanggal)}&kelas=${encodeURIComponent(curKelas)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && Array.isArray(data.records)) {
+              serverRecords = data.records;
+            }
+          }
+        } catch (e) {}
+
+        const savedPresensi = localStorage.getItem('smasa_presensi');
+        const scopedPresensi = loadPresensi();
+        const list: Presensi[] = savedPresensi ? JSON.parse(savedPresensi) : [];
+        const allSources = [...presensiList, ...scopedPresensi, ...list, ...serverRecords];
+
+        const validCheckins = allSources.filter(p => p && p.siswaId && p.tanggal);
+
+        if (validCheckins.length > 0) {
           let hasChanges = false;
           const merged = [...presensiList];
 
-          qrPresensi.forEach(qp => {
+          let newlyScannedName = '';
+          validCheckins.forEach(qp => {
             const idx = merged.findIndex(p => p.siswaId === qp.siswaId && p.tanggal === qp.tanggal);
             if (idx === -1) {
               merged.push(qp);
               hasChanges = true;
-            } else if (merged[idx].status !== qp.status || merged[idx].waktu !== qp.waktu || merged[idx].metode !== 'QR Code') {
-              merged[idx] = {
-                ...merged[idx],
-                status: qp.status,
-                waktu: qp.waktu,
-                metode: 'QR Code'
-              };
-              hasChanges = true;
+              if (qp.metode === 'QR Code' || qp.status === 'Hadir') {
+                newlyScannedName = `${qp.siswaNama} (${qp.siswaKelas})`;
+              }
+            } else {
+              const current = merged[idx];
+              // Update jika ada metode QR Code / status Hadir / waktu baru yang belum tercatat
+              if (
+                (qp.status === 'Hadir' && current.status !== 'Hadir') ||
+                (qp.metode === 'QR Code' && current.metode !== 'QR Code') ||
+                (qp.waktu && !current.waktu)
+              ) {
+                merged[idx] = {
+                  ...current,
+                  ...qp,
+                  metode: qp.metode || current.metode || 'QR Code'
+                };
+                hasChanges = true;
+                if (qp.metode === 'QR Code' || qp.status === 'Hadir') {
+                  newlyScannedName = `${qp.siswaNama} (${qp.siswaKelas})`;
+                }
+              }
             }
           });
 
           if (hasChanges) {
             onSavePresensi(merged);
+            if (newlyScannedName) {
+              setCheckinNotif(`Siswa ${newlyScannedName} berhasil absen via QR Code!`);
+              setTimeout(() => setCheckinNotif(null), 4000);
+            }
           }
         }
       } catch (e) {
-        console.error("Error polling storage checkins:", e);
+        console.error("Error polling checkins:", e);
       }
     };
 
     const poll = setInterval(syncCheckins, 1500);
+    syncCheckins();
+
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'smasa_presensi') {
+      if (e.key === 'smasa_presensi' || (e.key && e.key.includes('presensi'))) {
         syncCheckins();
       }
     };
-    window.addEventListener('storage', handleStorage);
 
+    window.addEventListener('storage', handleStorage);
     return () => {
       clearInterval(poll);
       window.removeEventListener('storage', handleStorage);
     };
-  }, [qrActiveSession, presensiList, onSavePresensi]);
+  }, [qrActiveSession, selectedTanggal, selectedKelas, presensiList, onSavePresensi]);
 
-  const handleStartQrSession = () => {
+  const handleStartQrSession = async () => {
     const today = new Date().toISOString().split('T')[0];
     const durationMs = qrDuration * 60 * 1000;
     const sessionToken = `QR-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -162,15 +194,29 @@ export default function KelolaPresensi({
     localStorage.setItem('smasa_active_qr_session', JSON.stringify(newSession));
     setQrActiveSession(newSession);
     setTimeLeft(qrDuration * 60);
+
+    try {
+      await fetch('/api/qr-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: newSession }),
+      });
+    } catch (e) {}
   };
 
-  const handleStopQrSession = () => {
+  const handleStopQrSession = async () => {
     localStorage.removeItem('smasa_active_qr_session');
     setQrActiveSession(null);
     setTimeLeft(0);
+
+    try {
+      await fetch(`/api/qr-session?kelas=${encodeURIComponent(selectedKelas)}`, {
+        method: 'DELETE',
+      });
+    } catch (e) {}
   };
 
-  const handleExtendQrSession = () => {
+  const handleExtendQrSession = async () => {
     if (!qrActiveSession) return;
     const extendedSession = {
       ...qrActiveSession,
@@ -179,6 +225,14 @@ export default function KelolaPresensi({
     };
     localStorage.setItem('smasa_active_qr_session', JSON.stringify(extendedSession));
     setQrActiveSession(extendedSession);
+
+    try {
+      await fetch('/api/qr-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: extendedSession }),
+      });
+    } catch (e) {}
   };
 
   // Ambil daftar kelas unik
@@ -282,13 +336,51 @@ export default function KelolaPresensi({
     };
   })();
 
-  // Filter siswa berdasarkan pencarian input
-  const filteredPresensiMap = activePresensiMap.filter((p) =>
-    p.siswaNama.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter siswa berdasarkan pencarian input & status scan QR
+  const filteredPresensiMap = activePresensiMap.filter((p) => {
+    const matchesSearch = p.siswaNama.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!matchesSearch) return false;
+
+    const existingRecord = presensiList.find(
+      (pr) => pr.siswaId === p.siswaId && pr.tanggal === selectedTanggal
+    );
+
+    if (scanFilter === 'scanned') {
+      return !!existingRecord;
+    } else if (scanFilter === 'unscanned') {
+      return !existingRecord;
+    }
+
+    return true;
+  });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Real-time Toast Notification when Student Scans QR */}
+      <AnimatePresence>
+        {checkinNotif && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-6 right-6 z-50 p-4 rounded-2xl bg-slate-900 text-white shadow-2xl border border-emerald-500/40 flex items-center gap-3.5 max-w-md"
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md animate-pulse">
+              <CheckCircle2 size={22} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block">Notifikasi Presensi QR</span>
+              <p className="text-xs font-bold text-slate-100 mt-0.5 leading-snug">{checkinNotif}</p>
+            </div>
+            <button
+              onClick={() => setCheckinNotif(null)}
+              className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Header Halaman */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -634,6 +726,62 @@ export default function KelolaPresensi({
             </div>
           </div>
 
+          {/* Opsi Filter Tampilan Daftar Siswa */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-100/70 border border-slate-200/80 text-xs">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+              <QrCode size={13} className="text-blue-600" /> Filter Status Scan QR / Presensi:
+            </span>
+            <div className="flex items-center gap-1 bg-white p-1 rounded-xl shadow-xs border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setScanFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  scanFilter === 'all'
+                    ? 'bg-slate-800 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Semua Siswa ({siswaInClass.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setScanFilter('scanned')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  scanFilter === 'scanned'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50'
+                }`}
+              >
+                <CheckCircle2 size={13} />
+                Sudah Scan / Hadir (
+                {
+                  siswaInClass.filter((s) =>
+                    presensiList.some((p) => p.siswaId === s.id && p.tanggal === selectedTanggal)
+                  ).length
+                }
+                )
+              </button>
+              <button
+                type="button"
+                onClick={() => setScanFilter('unscanned')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  scanFilter === 'unscanned'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-rose-700 hover:text-rose-800 hover:bg-rose-50'
+                }`}
+              >
+                <AlertCircle size={13} />
+                Belum Scan / Absen (
+                {
+                  siswaInClass.filter(
+                    (s) => !presensiList.some((p) => p.siswaId === s.id && p.tanggal === selectedTanggal)
+                  ).length
+                }
+                )
+              </button>
+            </div>
+          </div>
+
           {/* Ringkasan Kehadiran */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             <div className="p-4 rounded-2xl bg-white/40 border border-slate-100 flex flex-col items-center text-center justify-center">
@@ -698,39 +846,57 @@ export default function KelolaPresensi({
                       </td>
                     </tr>
                   ) : (
-                    filteredPresensiMap.map((p) => (
-                      <tr key={p.siswaId} className="hover:bg-slate-50/30 transition-colors">
-                        <td className="py-4 px-6 font-bold text-slate-800">{p.siswaNama}</td>
-                        <td className="py-4 px-6 text-slate-500">{p.siswaKelas}</td>
-                        <td className="py-4 px-6 text-center">
-                          <div className="inline-flex rounded-xl p-1 bg-slate-100 shadow-[inset_1px_1px_3px_#cbd5e1,inset_-1px_-1px_3px_#ffffff]">
-                            {[
-                              { id: 'Hadir', col: 'peer-checked:bg-emerald-600 peer-checked:text-white', txt: 'Hadir' },
-                              { id: 'Izin', col: 'peer-checked:bg-blue-600 peer-checked:text-white', txt: 'Izin' },
-                              { id: 'Sakit', col: 'peer-checked:bg-amber-600 peer-checked:text-white', txt: 'Sakit' },
-                              { id: 'Alfa', col: 'peer-checked:bg-rose-600 peer-checked:text-white', txt: 'Alfa' },
-                            ].map((btn) => (
-                              <label
-                                key={btn.id}
-                                className="relative flex items-center justify-center cursor-pointer"
-                              >
-                                <input
-                                  type="radio"
-                                  name={`attendance-${p.siswaId}`}
-                                  value={btn.id}
-                                  checked={p.status === btn.id}
-                                  onChange={() => handleStatusChange(p.siswaId, btn.id as AttendanceStatus)}
-                                  className="sr-only peer"
-                                />
-                                <span className={`px-4 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 transition-all ${btn.col}`}>
-                                  {btn.txt}
+                    filteredPresensiMap.map((p) => {
+                      const recorded = presensiList.find(
+                        (pr) => pr.siswaId === p.siswaId && pr.tanggal === selectedTanggal
+                      );
+                      return (
+                        <tr key={p.siswaId} className="hover:bg-slate-50/30 transition-colors">
+                          <td className="py-4 px-6 font-bold text-slate-800">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span>{p.siswaNama}</span>
+                              {recorded?.metode === 'QR Code' ? (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300/60 font-black text-[10px] inline-flex items-center gap-1 shadow-2xs">
+                                  <QrCode size={11} className="text-emerald-600" /> Presensi QR {recorded.waktu ? `(${recorded.waktu})` : ''}
                                 </span>
-                              </label>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                              ) : recorded ? (
+                                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60 font-bold text-[9px] inline-flex items-center gap-1">
+                                  {recorded.waktu ? `Tercatat ${recorded.waktu}` : 'Tercatat'}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="py-4 px-6 text-slate-500">{p.siswaKelas}</td>
+                          <td className="py-4 px-6 text-center">
+                            <div className="inline-flex rounded-xl p-1 bg-slate-100 shadow-[inset_1px_1px_3px_#cbd5e1,inset_-1px_-1px_3px_#ffffff]">
+                              {[
+                                { id: 'Hadir', col: 'peer-checked:bg-emerald-600 peer-checked:text-white', txt: 'Hadir' },
+                                { id: 'Izin', col: 'peer-checked:bg-blue-600 peer-checked:text-white', txt: 'Izin' },
+                                { id: 'Sakit', col: 'peer-checked:bg-amber-600 peer-checked:text-white', txt: 'Sakit' },
+                                { id: 'Alfa', col: 'peer-checked:bg-rose-600 peer-checked:text-white', txt: 'Alfa' },
+                              ].map((btn) => (
+                                <label
+                                  key={btn.id}
+                                  className="relative flex items-center justify-center cursor-pointer"
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`attendance-${p.siswaId}`}
+                                    value={btn.id}
+                                    checked={p.status === btn.id}
+                                    onChange={() => handleStatusChange(p.siswaId, btn.id as AttendanceStatus)}
+                                    className="sr-only peer"
+                                  />
+                                  <span className={`px-4 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 transition-all ${btn.col}`}>
+                                    {btn.txt}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

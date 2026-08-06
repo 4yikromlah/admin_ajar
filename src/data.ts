@@ -640,10 +640,57 @@ export const saveNilai = (data: Nilai[], skipAutoSync = false) => {
 // ----------------------------------------------------------------------------
 // HOOKS OPERASI PRESENSI
 // ----------------------------------------------------------------------------
-export const loadPresensi = (): Presensi[] => getLocalStorageData<Presensi>(getScopedKey('presensi'), SEED_PRESENSI);
+export const loadPresensi = (): Presensi[] => {
+  const scopedData = getLocalStorageData<Presensi>(getScopedKey('presensi'), SEED_PRESENSI);
+  const globalData = getLocalStorageData<Presensi>('smasa_presensi', []);
+
+  const mergedMap = new Map<string, Presensi>();
+  
+  // Masukkan seed / scoped data
+  scopedData.forEach(p => {
+    if (p && p.siswaId && p.tanggal) {
+      mergedMap.set(`${p.siswaId}_${p.tanggal}`, p);
+    }
+  });
+
+  // Gabungkan globalData (misal presensi yang baru di-scan oleh siswa)
+  globalData.forEach(p => {
+    if (p && p.siswaId && p.tanggal) {
+      const key = `${p.siswaId}_${p.tanggal}`;
+      const existing = mergedMap.get(key);
+      if (!existing || p.status === 'Hadir' || p.metode === 'QR Code') {
+        mergedMap.set(key, { ...existing, ...p });
+      }
+    }
+  });
+
+  return Array.from(mergedMap.values());
+};
+
 export const savePresensi = (data: Presensi[], skipAutoSync = false) => {
   saveLocalStorageData<Presensi>(getScopedKey('presensi'), data);
+  saveLocalStorageData<Presensi>('smasa_presensi', data);
   if (!skipAutoSync) triggerAutoSyncToSheets();
+  try {
+    fetch('/api/qr-presensi/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: data }),
+    }).catch(() => {});
+  } catch (e) {}
+};
+
+export const fetchPresensiFromServer = async (): Promise<Presensi[] | null> => {
+  try {
+    const res = await fetch('/api/presensi');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.records) && data.records.length > 0) {
+        return data.records;
+      }
+    }
+  } catch (e) {}
+  return null;
 };
 
 // ----------------------------------------------------------------------------
