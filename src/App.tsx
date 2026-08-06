@@ -583,6 +583,11 @@ export default function App() {
           onUpdatePembelajaran={handleUpdatePembelajaran}
           onSavePresensi={handleSavePresensi}
           onSaveRangkuman={handleSaveRangkuman}
+          onSyncSpreadsheet={handleSyncSpreadsheet}
+          isOnline={isOnline}
+          isSyncing={isSyncing}
+          syncError={syncError}
+          lastSyncTime={lastSyncTime}
         />
       </div>
     );

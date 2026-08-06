@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School, Mail, ArrowLeft, Lock, BellRing, Search, CheckCircle2, X } from 'lucide-react';
 import { Siswa, AppSettings, TeacherAccount } from '../types';
-import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchSuperAdminSpreadsheetUrlFromServer, fetchSuperAdminConfigFromServer, pullSuperAdminFromGoogleSheets, getTeacherSettings } from '../data';
+import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchSuperAdminSpreadsheetUrlFromServer, fetchSuperAdminConfigFromServer, pullSuperAdminFromGoogleSheets, getTeacherSettings, normalizeSiswaList } from '../data';
 import { ToastNotification, ToastProps } from './ToastNotification';
 
 interface LoginProps {
@@ -860,14 +860,17 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     const cleanUsername = siswaUsername.trim().toLowerCase();
     const cleanPassword = siswaPassword.trim();
 
-    // 1. Refresh teacher accounts from cloud database
+    // 1. Refresh teacher accounts from central cloud database
     try {
       await pullSuperAdminFromGoogleSheets();
     } catch (e) {}
 
     const teachers = loadTeacherAccounts();
+    const cleanSchoolName = (selectedSchool || '').trim().toLowerCase();
+
+    // FILTRASI AWAL: Saring guru berdasarkan sekolah yang dipilih siswa di halaman login
     const matchedTeachers = teachers.filter(
-      (t) => (t.asalSekolah || '').trim().toLowerCase() === selectedSchool.trim().toLowerCase()
+      (t) => (t.asalSekolah || '').trim().toLowerCase() === cleanSchoolName
     );
 
     let found: Siswa | null = null;
@@ -883,59 +886,38 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       });
     };
 
-    // 2. Search among students of teachers of the selected school locally
-    for (const teacher of matchedTeachers) {
-      const scopedKey = `smasa_${teacher.username}_siswa`;
-      const teacherStudentsString = localStorage.getItem(scopedKey);
-      const teacherStudents: Siswa[] = teacherStudentsString ? JSON.parse(teacherStudentsString) : [...siswaList];
-      const match = checkStudentInList(teacherStudents);
-      if (match) {
-        found = match;
-        matchedTeacherUsername = teacher.username;
-        break;
-      }
-    }
+    // Urutan Filtrasi: 1. Guru dari sekolah terpilih -> 2. Guru lain sebagai cadangan
+    const targetTeachers = matchedTeachers.length > 0 
+      ? [...matchedTeachers, ...teachers.filter(t => !matchedTeachers.includes(t))]
+      : teachers;
 
-    // 3. Search across ALL registered teachers locally
-    if (!found) {
-      for (const teacher of teachers) {
-        const scopedKey = `smasa_${teacher.username}_siswa`;
-        const teacherStudentsString = localStorage.getItem(scopedKey);
-        const teacherStudents: Siswa[] = teacherStudentsString ? JSON.parse(teacherStudentsString) : [...siswaList];
-        const match = checkStudentInList(teacherStudents);
-        if (match) {
-          found = match;
-          matchedTeacherUsername = teacher.username;
-          break;
-        }
-      }
-    }
-
-    // 4. Search in default/prop list
-    if (!found) {
-      const match = checkStudentInList(siswaList);
-      if (match) {
-        found = match;
-        matchedTeacherUsername = '';
-      }
-    }
-
-    // 5. If still not found, pull student database from teacher's Google Spreadsheet!
-    if (!found) {
-      for (const teacher of teachers) {
-        if (teacher.spreadsheetUrl) {
-          try {
-            const res = await fetch('/api/gas-proxy', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url: teacher.spreadsheetUrl, method: 'GET' })
-            });
-            if (res.ok) {
-              const db = await res.json();
-              if (db && Array.isArray(db.siswa)) {
+    // 2. Tarik database siswa secara LIVE dari Google Spreadsheet milik guru pengampu (Single Source of Truth)
+    for (const teacher of targetTeachers) {
+      if (teacher.spreadsheetUrl) {
+        try {
+          const res = await fetch('/api/gas-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: teacher.spreadsheetUrl, method: 'GET' })
+          });
+          if (res.ok) {
+            const db = await res.json();
+            if (db && typeof db === 'object') {
+              const rawSiswa = db.siswa || db.siswaList || db.Siswa || db.DataSiswa;
+              if (Array.isArray(rawSiswa)) {
+                const normalized = normalizeSiswaList(rawSiswa);
                 const scopedKey = `smasa_${teacher.username}_siswa`;
-                localStorage.setItem(scopedKey, JSON.stringify(db.siswa));
-                const match = checkStudentInList(db.siswa);
+                localStorage.setItem(scopedKey, JSON.stringify(normalized));
+
+                // Simpan juga tabel lainnya ke cache lokal jika ada
+                if (Array.isArray(db.nilai)) localStorage.setItem(`smasa_${teacher.username}_nilai`, JSON.stringify(db.nilai));
+                if (Array.isArray(db.presensi)) localStorage.setItem(`smasa_${teacher.username}_presensi`, JSON.stringify(db.presensi));
+                if (Array.isArray(db.pembelajaran)) localStorage.setItem(`smasa_${teacher.username}_pembelajaran`, JSON.stringify(db.pembelajaran));
+                if (Array.isArray(db.pengumuman)) localStorage.setItem(`smasa_${teacher.username}_pengumuman`, JSON.stringify(db.pengumuman));
+                if (Array.isArray(db.rangkuman)) localStorage.setItem(`smasa_${teacher.username}_rangkuman`, JSON.stringify(db.rangkuman));
+                if (db.settings) localStorage.setItem(`smasa_${teacher.username}_settings`, JSON.stringify(db.settings));
+
+                const match = checkStudentInList(normalized);
                 if (match) {
                   found = match;
                   matchedTeacherUsername = teacher.username;
@@ -943,10 +925,38 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
                 }
               }
             }
-          } catch (err) {
-            console.warn(`[Siswa Sync] Gagal mengunduh data siswa untuk guru ${teacher.username}:`, err);
           }
+        } catch (err) {
+          console.warn(`[Siswa Sync] Gagal mengunduh data siswa live untuk guru ${teacher.username}:`, err);
         }
+      }
+    }
+
+    // 3. Fallback pencarian lokal jika offline atau Google Spreadsheet tidak merespons
+    if (!found) {
+      for (const teacher of targetTeachers) {
+        const scopedKey = `smasa_${teacher.username}_siswa`;
+        const teacherStudentsString = localStorage.getItem(scopedKey);
+        if (teacherStudentsString) {
+          try {
+            const teacherStudents: Siswa[] = JSON.parse(teacherStudentsString);
+            const match = checkStudentInList(teacherStudents);
+            if (match) {
+              found = match;
+              matchedTeacherUsername = teacher.username;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    // 4. Fallback pencarian di daftar default / prop
+    if (!found) {
+      const match = checkStudentInList(siswaList);
+      if (match) {
+        found = match;
+        matchedTeacherUsername = '';
       }
     }
 
@@ -984,7 +994,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
         onStudentLoginSuccess(studentData, teacherUser);
       }, 2200);
     } else {
-      setSiswaError('NIS/Username atau Kata Sandi Siswa salah pada sekolah yang dipilih.');
+      setSiswaError(`NIS/Username atau Kata Sandi Siswa tidak ditemukan atau tidak cocok untuk pilihan sekolah "${selectedSchool}".`);
       setIsSiswaLoading(false);
     }
   };

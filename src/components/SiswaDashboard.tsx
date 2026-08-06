@@ -35,7 +35,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Siswa, Nilai, Presensi, Pembelajaran, Pengumuman, AppSettings, Rangkuman } from '../types';
-import { loadRangkuman, saveRangkuman } from '../data';
+import { loadRangkuman, saveRangkuman, loadPresensi, savePresensi } from '../data';
+import SyncStatusIndicator from './SyncStatusIndicator';
 
 const getTenggatStatus = (materi: Pembelajaran) => {
   if (materi.jenis === 'Modul') return null;
@@ -62,10 +63,15 @@ const getTenggatStatus = (materi: Pembelajaran) => {
   };
 };
 
-const isWithinAccessTime = (jenis: 'Literasi' | 'Tugas/Tes' | string, settings: AppSettings) => {
-  const startStr = jenis === 'Literasi' ? settings.literasiStartAccess : settings.tugasStartAccess;
-  const endStr = jenis === 'Literasi' ? settings.literasiEndAccess : settings.tugasEndAccess;
-  
+const isWithinAccessTime = (jenis: string, settings: AppSettings, materi?: Pembelajaran) => {
+  let startStr = jenis === 'Literasi' ? settings.literasiStartAccess : settings.tugasStartAccess;
+  let endStr = jenis === 'Literasi' ? settings.literasiEndAccess : settings.tugasEndAccess;
+
+  if (materi && (jenis === 'Tugas Harian' || jenis === 'Tugas Rumah') && materi.jamMulai && materi.jamSelesai) {
+    startStr = materi.jamMulai;
+    endStr = materi.jamSelesai;
+  }
+
   if (!startStr || !endStr) return true;
   
   const now = new Date();
@@ -99,6 +105,11 @@ interface SiswaDashboardProps {
   onUpdatePembelajaran?: (p: Pembelajaran) => void;
   onSavePresensi?: (list: Presensi[]) => void;
   onSaveRangkuman?: (list: Rangkuman[]) => void;
+  onSyncSpreadsheet?: () => Promise<any> | void;
+  isOnline?: boolean;
+  isSyncing?: boolean;
+  syncError?: string | null;
+  lastSyncTime?: Date | null;
 }
 
 export default function SiswaDashboard({
@@ -113,6 +124,11 @@ export default function SiswaDashboard({
   onUpdatePembelajaran,
   onSavePresensi,
   onSaveRangkuman,
+  onSyncSpreadsheet,
+  isOnline,
+  isSyncing,
+  syncError,
+  lastSyncTime,
 }: SiswaDashboardProps) {
   // Navigation Tabs for Student Dashboard
   const [activeTab, setActiveTab] = useState<'dashboard' | 'pembelajaran' | 'qr-presensi' | 'settings'>('dashboard');
@@ -178,9 +194,8 @@ export default function SiswaDashboard({
         hour12: false
       });
 
-      // Ambil presensi saat ini
-      const savedPresensi = localStorage.getItem('smasa_presensi');
-      const list: Presensi[] = savedPresensi ? JSON.parse(savedPresensi) : [];
+      // Ambil presensi saat ini dari penyimpanan ter-scope
+      const list: Presensi[] = loadPresensi();
 
       // Cek apakah siswa sudah presensi hari ini
       const alreadyPresensi = list.some(p => p.siswaId === siswa.id && p.tanggal === todayStr);
@@ -201,7 +216,7 @@ export default function SiswaDashboard({
       };
 
       const updatedList = [...list, newPresensi];
-      localStorage.setItem('smasa_presensi', JSON.stringify(updatedList));
+      savePresensi(updatedList);
 
       if (onSavePresensi) {
         onSavePresensi(updatedList);
@@ -266,7 +281,7 @@ export default function SiswaDashboard({
   };
 
   // Sub-tabs inside Pembelajaran
-  const [pembelajaranTab, setPembelajaranTab] = useState<'Modul' | 'Literasi' | 'Tugas/Tes'>('Modul');
+  const [pembelajaranTab, setPembelajaranTab] = useState<'Modul' | 'Literasi' | 'Tugas Harian' | 'Tugas Rumah' | 'Tugas/Tes'>('Modul');
 
   // Rangkuman Central State for Current Student
   const [rangkumans, setRangkumans] = useState<Rangkuman[]>([]);
@@ -563,8 +578,17 @@ export default function SiswaDashboard({
           </div>
         </div>
 
-        {/* User Badge / Logout */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+        {/* User Badge / Sync Indicator / Logout */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto justify-end">
+          <SyncStatusIndicator
+            isOnline={isOnline ?? true}
+            spreadsheetUrl={settings.spreadsheetUrl}
+            isSyncing={isSyncing ?? false}
+            syncError={syncError}
+            lastSyncTime={lastSyncTime}
+            onManualSync={onSyncSpreadsheet}
+            compact={true}
+          />
           <div className="text-right hidden sm:block">
             <h4 className="text-xs font-bold text-slate-800">{siswa.nama}</h4>
             <p className="text-[10px] text-slate-500">NIS: {siswa.nis}</p>
@@ -856,20 +880,23 @@ export default function SiswaDashboard({
               </div>
 
               {/* Pembelajaran Type Tabs Selector */}
-              <div className="flex rounded-2xl p-1.5 bg-slate-100 shadow-inner">
-                {(['Modul', 'Literasi', 'Tugas/Tes'] as const).map((tab) => {
+              <div className="flex flex-wrap rounded-2xl p-1.5 bg-slate-100 shadow-inner gap-1">
+                {(['Modul', 'Literasi', 'Tugas Harian', 'Tugas Rumah', 'Tugas/Tes'] as const).map((tab) => {
                   const isCurrent = pembelajaranTab === tab;
                   return (
                     <button
                       key={tab}
                       onClick={() => setPembelajaranTab(tab)}
-                      className={`flex-1 text-center py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      className={`flex-1 min-w-[90px] text-center py-3 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                         isCurrent ? 'text-pink-600 bg-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
                       }`}
+                      id={`tab-pembelajaran-${tab.toLowerCase().replace('/', '-')}`}
                     >
-                      {tab === 'Modul' && '📖 Modul Belajar'}
-                      {tab === 'Literasi' && '✍️ Literasi Digital'}
-                      {tab === 'Tugas/Tes' && '📝 Tugas & Kuis'}
+                      {tab === 'Modul' && '📖 Modul'}
+                      {tab === 'Literasi' && '✍️ Literasi'}
+                      {tab === 'Tugas Harian' && '📝 Tugas Harian'}
+                      {tab === 'Tugas Rumah' && '🏠 Tugas Rumah'}
+                      {tab === 'Tugas/Tes' && '🎯 Kuis & Tes'}
                     </button>
                   );
                 })}
@@ -878,7 +905,18 @@ export default function SiswaDashboard({
               {/* Grid Contents */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {pembelajaranList
-                  .filter((p) => p.jenis === pembelajaranTab)
+                  .filter((p) => {
+                    if (pembelajaranTab === 'Tugas Harian') {
+                      return p.jenis === 'Tugas Harian' || p.jenis === 'Tugas/Tes';
+                    }
+                    if (pembelajaranTab === 'Tugas Rumah') {
+                      return p.jenis === 'Tugas Rumah';
+                    }
+                    if (pembelajaranTab === 'Tugas/Tes') {
+                      return p.jenis === 'Tugas/Tes';
+                    }
+                    return p.jenis === pembelajaranTab;
+                  })
                   .filter((materi) => {
                     if (materi.kelasConfig && materi.kelasConfig[siswa.kelas]) {
                       return materi.kelasConfig[siswa.kelas].isActive;
@@ -890,7 +928,18 @@ export default function SiswaDashboard({
                   </div>
                 ) : (
                   pembelajaranList
-                    .filter((p) => p.jenis === pembelajaranTab)
+                    .filter((p) => {
+                      if (pembelajaranTab === 'Tugas Harian') {
+                        return p.jenis === 'Tugas Harian' || p.jenis === 'Tugas/Tes';
+                      }
+                      if (pembelajaranTab === 'Tugas Rumah') {
+                        return p.jenis === 'Tugas Rumah';
+                      }
+                      if (pembelajaranTab === 'Tugas/Tes') {
+                        return p.jenis === 'Tugas/Tes';
+                      }
+                      return p.jenis === pembelajaranTab;
+                    })
                     .filter((materi) => {
                       if (materi.kelasConfig && materi.kelasConfig[siswa.kelas]) {
                         return materi.kelasConfig[siswa.kelas].isActive;
@@ -912,9 +961,13 @@ export default function SiswaDashboard({
                       const savedSummaryData = rangkumans.find((r) => r.pembelajaranId === materi.id);
                       const status = getTenggatStatus(materi);
                       const isOverdue = status ? (status.diffDays < 0 && !materi.isUnlocked) : false;
-                      const startStr = materi.jenis === 'Literasi' ? settings.literasiStartAccess : settings.tugasStartAccess;
-                      const endStr = materi.jenis === 'Literasi' ? settings.literasiEndAccess : settings.tugasEndAccess;
-                      const isTimeClosed = (materi.jenis === 'Literasi' || materi.jenis === 'Tugas/Tes') && !isWithinAccessTime(materi.jenis, settings);
+                      const startStr = (materi.jenis === 'Tugas Harian' || materi.jenis === 'Tugas Rumah') && materi.jamMulai
+                        ? materi.jamMulai
+                        : (materi.jenis === 'Literasi' ? settings.literasiStartAccess : settings.tugasStartAccess);
+                      const endStr = (materi.jenis === 'Tugas Harian' || materi.jenis === 'Tugas Rumah') && materi.jamSelesai
+                        ? materi.jamSelesai
+                        : (materi.jenis === 'Literasi' ? settings.literasiEndAccess : settings.tugasEndAccess);
+                      const isTimeClosed = (materi.jenis === 'Literasi' || materi.jenis === 'Tugas/Tes' || materi.jenis === 'Tugas Harian' || materi.jenis === 'Tugas Rumah') && !isWithinAccessTime(materi.jenis, settings, materi);
 
                       return (
                         <div
@@ -1104,8 +1157,8 @@ export default function SiswaDashboard({
                               </div>
                             )}
 
-                            {/* CRITICAL FEATURE: "PADA CARD TUGAS/TES, TAMBAHKAN INPUT LAPORAN PENGERJAAN" */}
-                            {materi.jenis === 'Tugas/Tes' && (
+                            {/* CRITICAL FEATURE: "PADA CARD TUGAS/TES / TUGAS HARIAN / TUGAS RUMAH, TAMBAHKAN INPUT LAPORAN PENGERJAAN" */}
+                            {(materi.jenis === 'Tugas/Tes' || materi.jenis === 'Tugas Harian' || materi.jenis === 'Tugas Rumah') && (
                               <div className="p-3.5 rounded-2xl bg-slate-50/70 border border-slate-100 space-y-3">
                                 <div className="flex justify-between items-center">
                                   <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wide block">
