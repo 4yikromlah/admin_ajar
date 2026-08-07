@@ -99,7 +99,7 @@ export default function KelolaPresensi({
 
         let serverRecords: Presensi[] = [];
         try {
-          const res = await fetch(`/api/qr-presensi/list?tanggal=${encodeURIComponent(curTanggal)}&kelas=${encodeURIComponent(curKelas)}`);
+          const res = await fetch(`/api/qr-presensi/list`);
           if (res.ok) {
             const data = await res.json();
             if (data && Array.isArray(data.records)) {
@@ -292,9 +292,12 @@ export default function KelolaPresensi({
       );
 
       if (existsIdx > -1) {
+        const existingRec = updatedList[existsIdx];
         updatedList[existsIdx] = {
-          ...updatedList[existsIdx],
+          ...existingRec,
           status: currentStatus,
+          metode: existingRec.metode || 'Manual',
+          waktu: existingRec.waktu || (currentStatus === 'Hadir' ? new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : undefined),
         };
       } else {
         updatedList.push({
@@ -304,6 +307,8 @@ export default function KelolaPresensi({
           siswaKelas: siswa.kelas,
           tanggal: selectedTanggal,
           status: currentStatus,
+          waktu: currentStatus === 'Hadir' ? new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : undefined,
+          metode: 'Manual',
         });
       }
     });

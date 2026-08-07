@@ -200,6 +200,54 @@ export default function App() {
   const [pengumumanList, setPengumumanList] = useState<Pengumuman[]>(() => loadPengumuman());
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
 
+  // Real-time server sync for QR presensi across all devices/tabs
+  useEffect(() => {
+    const syncServerPresensi = async () => {
+      try {
+        const res = await fetch('/api/presensi');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.records) && data.records.length > 0) {
+            const serverRecords: Presensi[] = data.records;
+            setPresensiList((prevList) => {
+              let hasNew = false;
+              const merged = [...prevList];
+              serverRecords.forEach((sr) => {
+                if (!sr || !sr.siswaId || !sr.tanggal) return;
+                const idx = merged.findIndex((p) => p.siswaId === sr.siswaId && p.tanggal === sr.tanggal);
+                if (idx === -1) {
+                  merged.push(sr);
+                  hasNew = true;
+                } else {
+                  const curr = merged[idx];
+                  if (
+                    (sr.status === 'Hadir' && curr.status !== 'Hadir') ||
+                    (sr.metode === 'QR Code' && curr.metode !== 'QR Code') ||
+                    (sr.waktu && !curr.waktu)
+                  ) {
+                    merged[idx] = { ...curr, ...sr };
+                    hasNew = true;
+                  }
+                }
+              });
+              if (hasNew) {
+                savePresensi(merged, true);
+                return merged;
+              }
+              return prevList;
+            });
+          }
+        }
+      } catch (e) {
+        // silent fail
+      }
+    };
+
+    syncServerPresensi();
+    const interval = setInterval(syncServerPresensi, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Memuat ulang seluruh state dari penyimpanan lokal (biasanya setelah menarik data dari Spreadsheet)
   const reloadAllStates = () => {
     setSiswaList(loadSiswa());
@@ -448,6 +496,62 @@ export default function App() {
     syncPush();
   };
 
+  const handleResetSiswa = async (withBackup: boolean) => {
+    if (withBackup) {
+      try {
+        const backupData = {
+          tanggalBackup: new Date().toLocaleDateString('id-ID', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
+          guru: settings.namaGuru,
+          totalSiswa: siswaList.length,
+          siswa: siswaList,
+          nilai: nilaiList,
+          presensi: presensiList
+        };
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+        const downloadAnchor = document.createElement('a');
+        const dateStr = new Date().toISOString().split('T')[0];
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `backup_data_siswa_smasa_${dateStr}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+      } catch (err) {
+        console.error("Gagal mengunduh backup data siswa:", err);
+      }
+    }
+
+    // Reset/Hapus semua daftar siswa, nilai, dan presensi
+    setSiswaList([]);
+    saveSiswa([]);
+
+    setNilaiList([]);
+    saveNilai([]);
+
+    setPresensiList([]);
+    savePresensi([]);
+
+    try {
+      await fetch('/api/qr-presensi/clear', { method: 'DELETE' });
+    } catch (e) {
+      // silent
+    }
+
+    alert(
+      withBackup
+        ? "Backup data berhasil diunduh dan seluruh data siswa, nilai, serta presensi telah dibersihkan!"
+        : "Seluruh data siswa, nilai, serta presensi telah berhasil dibersihkan!"
+    );
+    syncPush();
+  };
+
   // ============================================================================
   // HANDLERS CRUD: PENILAIAN
   // ============================================================================
@@ -589,10 +693,13 @@ export default function App() {
         return (
           <KelolaSiswa
             siswaList={siswaList}
+            nilaiList={nilaiList}
+            presensiList={presensiList}
             onAddSiswa={handleAddSiswa}
             onUpdateSiswa={handleUpdateSiswa}
             onDeleteSiswa={handleDeleteSiswa}
             onImportSiswa={handleImportSiswa}
+            onResetSiswa={handleResetSiswa}
           />
         );
       case 'nilai':

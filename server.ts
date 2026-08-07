@@ -319,6 +319,12 @@ app.get('/api/presensi', (req, res) => {
   return res.json({ status: 'success', records: serverPresensiRecords });
 });
 
+app.delete('/api/qr-presensi/clear', (req, res) => {
+  serverPresensiRecords = [];
+  savePresensiToDisk();
+  return res.json({ status: 'success' });
+});
+
 app.get('/api/superadmin-url', (req, res) => {
   const activeUrl = spreadsheetUrl || process.env.SUPERADMIN_SPREADSHEET_URL || process.env.VITE_SUPERADMIN_SPREADSHEET_URL || DEFAULT_SUPERADMIN_SPREADSHEET_URL;
   res.json({ 

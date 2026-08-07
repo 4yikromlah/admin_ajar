@@ -4,24 +4,30 @@
  */
 
 import React, { useState, useRef } from 'react';
-import { Search, UserPlus, Upload, Trash2, Edit3, X, FileSpreadsheet, Check, AlertCircle, GraduationCap, Download, Eye, User } from 'lucide-react';
+import { Search, UserPlus, Upload, Trash2, Edit3, X, FileSpreadsheet, Check, AlertCircle, GraduationCap, Download, Eye, User, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Siswa } from '../types';
+import { Siswa, Nilai, Presensi } from '../types';
 
 interface KelolaSiswaProps {
   siswaList: Siswa[];
+  nilaiList?: Nilai[];
+  presensiList?: Presensi[];
   onAddSiswa: (s: Siswa) => void;
   onUpdateSiswa: (s: Siswa) => void;
   onDeleteSiswa: (id: string) => void;
   onImportSiswa: (list: Siswa[]) => void;
+  onResetSiswa?: (withBackup: boolean) => void;
 }
 
 export default function KelolaSiswa({
   siswaList,
+  nilaiList = [],
+  presensiList = [],
   onAddSiswa,
   onUpdateSiswa,
   onDeleteSiswa,
   onImportSiswa,
+  onResetSiswa,
 }: KelolaSiswaProps) {
   // State Pencarian & Filter
   const [search, setSearch] = useState('');
@@ -30,6 +36,7 @@ export default function KelolaSiswa({
   // State Modals
   const [showFormModal, setShowFormModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
   const [selectedSiswa, setSelectedSiswa] = useState<Siswa | null>(null);
   const [viewingSiswa, setViewingSiswa] = useState<Siswa | null>(null);
 
@@ -287,10 +294,10 @@ export default function KelolaSiswa({
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">Tambah, ubah, hapus, dan import database siswa Informatika</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2.5">
           <button
             onClick={() => setShowImportModal(true)}
-            className="neu-flat-sm px-4 py-2.5 rounded-xl text-slate-600 font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95"
+            className="neu-flat-sm px-3.5 py-2.5 rounded-xl text-slate-600 font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95"
             id="btn-open-import"
           >
             <Upload size={14} className="text-slate-500" />
@@ -298,11 +305,26 @@ export default function KelolaSiswa({
           </button>
           <button
             onClick={handleOpenAdd}
-            className="neu-flat-sm px-4 py-2.5 rounded-xl bg-blue-50 text-blue-700 font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95"
+            className="neu-flat-sm px-3.5 py-2.5 rounded-xl bg-blue-50 text-blue-700 font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95"
             id="btn-open-add-siswa"
           >
             <UserPlus size={14} className="text-blue-700" />
             <span className="text-blue-700">Siswa Baru</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowResetModal(true)}
+            disabled={siswaList.length === 0}
+            className={`neu-flat-sm px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95 transition-all ${
+              siswaList.length === 0
+                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/80'
+            }`}
+            id="btn-reset-siswa"
+            title="Reset / Hapus Semua Daftar Siswa"
+          >
+            <RotateCcw size={14} className="text-rose-600" />
+            <span>Reset Siswa</span>
           </button>
         </div>
       </div>
@@ -917,6 +939,83 @@ export default function KelolaSiswa({
                   className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all cursor-pointer shadow-md shadow-rose-100"
                 >
                   Ya, Hapus
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Modal Popup Reset Data Siswa */}
+      <AnimatePresence>
+        {showResetModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowResetModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 max-w-md w-full space-y-5 z-10"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0 shadow-xs">
+                  <RotateCcw size={24} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-black text-slate-800 tracking-tight">Reset Semua Data Siswa</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Apakah Anda yakin ingin menghapus <strong>semua {siswaList.length} data siswa</strong>? Tindakan ini akan menghapus seluruh identitas siswa, nilai, dan presensi.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-100 text-xs text-amber-800 space-y-1">
+                <div className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                  <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                  <span>Pilihan Backup Data</span>
+                </div>
+                <p className="text-[11px] leading-snug text-amber-800">
+                  Pilih <strong>"Ya, Backup &amp; Hapus"</strong> untuk mengunduh cadangan seluruh data siswa, nilai, dan presensi dalam berkas file JSON sebelum dihapus.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onResetSiswa) onResetSiswa(true);
+                    setShowResetModal(false);
+                  }}
+                  className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-100 transition-all active:scale-95"
+                >
+                  <Download size={15} />
+                  <span>Ya, Backup &amp; Hapus</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onResetSiswa) onResetSiswa(false);
+                    setShowResetModal(false);
+                  }}
+                  className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                >
+                  <Trash2 size={15} />
+                  <span>Tidak, Hapus Saja</span>
+                </button>
+              </div>
+
+              <div className="text-center pt-1 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(false)}
+                  className="px-4 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer transition-colors"
+                >
+                  Batal
                 </button>
               </div>
             </motion.div>
