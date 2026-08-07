@@ -249,8 +249,13 @@ export default function SiswaDashboard({
         await fetch('/api/qr-presensi/checkin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ presensi: newPresensi })
+          body: JSON.stringify({ presensi: newPresensi, record: newPresensi })
         });
+        await fetch('/api/qr-presensi/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ records: [newPresensi] })
+        }).catch(() => {});
       } catch (err) {
         console.warn("[QR Checkin Server Sync Error]", err);
       }

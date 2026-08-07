@@ -262,7 +262,7 @@ app.delete('/api/qr-session', (req, res) => {
 // QR Presensi Checkin & Live List Endpoints
 // ----------------------------------------------------------------------------
 app.post('/api/qr-presensi/checkin', (req, res) => {
-  const { presensi } = req.body;
+  const presensi = req.body.presensi || req.body.record;
   if (!presensi || !presensi.siswaId || !presensi.tanggal) {
     return res.status(400).json({ status: 'error', error: 'Data presensi tidak lengkap' });
   }

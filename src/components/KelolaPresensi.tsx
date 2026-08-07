@@ -324,13 +324,14 @@ export default function KelolaPresensi({
 
   // Hitung persentase kehadiran untuk ringkasan di atas tabel
   const statsKehadiran = (() => {
-    const total = activePresensiMap.length;
-    if (total === 0) return { hadir: 0, izin: 0, sakit: 0, alfa: 0, rate: 100 };
+    const total = siswaInClass.length;
+    if (total === 0) return { hadir: 0, izin: 0, sakit: 0, alfa: 0, rate: 0 };
 
-    const hadir = activePresensiMap.filter((p) => p.status === 'Hadir').length;
-    const izin = activePresensiMap.filter((p) => p.status === 'Izin').length;
-    const sakit = activePresensiMap.filter((p) => p.status === 'Sakit').length;
-    const alfa = activePresensiMap.filter((p) => p.status === 'Alfa').length;
+    const records = siswaInClass.map(s => presensiList.find(p => p.siswaId === s.id && p.tanggal === selectedTanggal));
+    const hadir = records.filter((p) => p && p.status === 'Hadir').length;
+    const izin = records.filter((p) => p && p.status === 'Izin').length;
+    const sakit = records.filter((p) => p && p.status === 'Sakit').length;
+    const alfa = records.filter((p) => p && p.status === 'Alfa').length;
 
     return {
       hadir,
@@ -351,9 +352,9 @@ export default function KelolaPresensi({
     );
 
     if (scanFilter === 'scanned') {
-      return !!existingRecord;
+      return !!existingRecord && (existingRecord.status === 'Hadir' || existingRecord.metode === 'QR Code');
     } else if (scanFilter === 'unscanned') {
-      return !existingRecord;
+      return !existingRecord || existingRecord.status !== 'Hadir';
     }
 
     return true;
@@ -598,15 +599,27 @@ export default function KelolaPresensi({
                       <p className="text-[10px] text-slate-400 mt-0.5">Siswa yang berhasil memindai QR code hari ini.</p>
                     </div>
                     <div className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full text-xs font-black font-mono">
-                      {presensiList.filter(p => p.tanggal === qrActiveSession.tanggal && p.siswaKelas === qrActiveSession.kelas && p.status === 'Hadir').length} / {siswaInClass.length} Siswa
+                      {presensiList.filter(p => {
+                        const sameDate = p.tanggal === qrActiveSession.tanggal;
+                        const pK = String(p.siswaKelas || (p as any).kelas || '').trim().toLowerCase().replace(/\s+/g, '');
+                        const sessK = String(qrActiveSession.kelas || '').trim().toLowerCase().replace(/\s+/g, '');
+                        const sameClass = pK === sessK || siswaList.some(s => s.id === p.siswaId && String(s.kelas).trim().toLowerCase().replace(/\s+/g, '') === sessK);
+                        return sameDate && sameClass && p.status === 'Hadir';
+                      }).length} / {siswaInClass.length} Siswa
                     </div>
                   </div>
 
                   {/* Scanned Student List */}
                   <div className="flex-1 overflow-y-auto max-h-[360px] pr-1 divide-y divide-slate-100 scrollbar-thin">
                     {(() => {
+                      const sessK = String(qrActiveSession.kelas || '').trim().toLowerCase().replace(/\s+/g, '');
                       const checkins = presensiList
-                        .filter(p => p.tanggal === qrActiveSession.tanggal && p.siswaKelas === qrActiveSession.kelas && p.status === 'Hadir')
+                        .filter(p => {
+                          const sameDate = p.tanggal === qrActiveSession.tanggal;
+                          const pK = String(p.siswaKelas || (p as any).kelas || '').trim().toLowerCase().replace(/\s+/g, '');
+                          const sameClass = pK === sessK || siswaList.some(s => s.id === p.siswaId && String(s.kelas).trim().toLowerCase().replace(/\s+/g, '') === sessK);
+                          return sameDate && sameClass && p.status === 'Hadir';
+                        })
                         .sort((a, b) => (b.waktu || '').localeCompare(a.waktu || ''));
 
                       if (checkins.length === 0) {
