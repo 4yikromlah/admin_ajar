@@ -23,11 +23,34 @@ import {
   UserX,
   Eye,
   X,
-  Maximize2
+  Maximize2,
+  Terminal,
+  Activity,
+  FileJson,
+  Copy,
+  Database,
+  Wifi,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Siswa, Presensi, AttendanceStatus } from '../types';
 import { loadPresensi } from '../data';
+
+export interface SyncLogEntry {
+  id: string;
+  time: string;
+  endpoint: string;
+  status: string;
+  recordsReceivedCount: number;
+  recordsReceivedSample: string;
+  mergedNewCount: number;
+  mergedUpdatedCount: number;
+  presensiListBefore: number;
+  presensiListAfter: number;
+  isManualTrigger?: boolean;
+  errorDetails?: string;
+}
 
 interface KelolaPresensiProps {
   presensiList: Presensi[];
@@ -90,84 +113,175 @@ export default function KelolaPresensi({
     return () => clearInterval(interval);
   }, [qrActiveSession]);
 
-  // Sync / poll local storage & server checkins to live update list in real-time
-  useEffect(() => {
-    const syncCheckins = async () => {
-      try {
-        const curTanggal = qrActiveSession?.tanggal || selectedTanggal;
-        const curKelas = qrActiveSession?.kelas || selectedKelas;
+  // Diagnostic Inspector states
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [diagnosticTab, setDiagnosticTab] = useState<'network' | 'json' | 'session'>('network');
+  const [networkLogs, setNetworkLogs] = useState<SyncLogEntry[]>([]);
+  const [jsonSearchQuery, setJsonSearchQuery] = useState('');
+  const [copiedJsonToast, setCopiedJsonToast] = useState(false);
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
+  const [jsonDataSource, setJsonDataSource] = useState<'presensiList' | 'localStorage' | 'serverApi'>('presensiList');
+  const [serverApiData, setServerApiData] = useState<any>(null);
+  const [logFilter, setLogFilter] = useState<'all' | 'changed' | 'error'>('all');
 
-        let serverRecords: Presensi[] = [];
-        try {
-          const res = await fetch(`/api/qr-presensi/list`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data && Array.isArray(data.records)) {
-              serverRecords = data.records;
-            }
-          }
-        } catch (e) {}
+  const performSyncAndLog = async (isManual = false) => {
+    const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    let serverRecords: Presensi[] = [];
+    let fetchStatusStr = '200 OK';
+    let errorMsg = '';
 
-        const savedPresensi = localStorage.getItem('smasa_presensi');
-        const scopedPresensi = loadPresensi();
-        const list: Presensi[] = savedPresensi ? JSON.parse(savedPresensi) : [];
-        const allSources = [...presensiList, ...scopedPresensi, ...list, ...serverRecords];
+    try {
+      if (isManual) setIsSyncingNow(true);
 
-        const validCheckins = allSources.filter(p => p && p.siswaId && p.tanggal);
+      const [resList, resPresensi] = await Promise.all([
+        fetch('/api/qr-presensi/list').catch(err => ({ ok: false, statusText: err.message } as any)),
+        fetch('/api/presensi').catch(err => ({ ok: false, statusText: err.message } as any))
+      ]);
 
-        if (validCheckins.length > 0) {
-          let hasChanges = false;
-          const merged = [...presensiList];
-
-          let newlyScannedName = '';
-          validCheckins.forEach(qp => {
-            const idx = merged.findIndex(p => p.siswaId === qp.siswaId && p.tanggal === qp.tanggal);
-            if (idx === -1) {
-              merged.push(qp);
-              hasChanges = true;
-              if (qp.metode === 'QR Code' || qp.status === 'Hadir') {
-                newlyScannedName = `${qp.siswaNama} (${qp.siswaKelas})`;
-              }
-            } else {
-              const current = merged[idx];
-              // Update jika ada metode QR Code / status Hadir / waktu baru yang belum tercatat
-              if (
-                (qp.status === 'Hadir' && current.status !== 'Hadir') ||
-                (qp.metode === 'QR Code' && current.metode !== 'QR Code') ||
-                (qp.waktu && !current.waktu)
-              ) {
-                merged[idx] = {
-                  ...current,
-                  ...qp,
-                  metode: qp.metode || current.metode || 'QR Code'
-                };
-                hasChanges = true;
-                if (qp.metode === 'QR Code' || qp.status === 'Hadir') {
-                  newlyScannedName = `${qp.siswaNama} (${qp.siswaKelas})`;
-                }
-              }
+      if (resList && resList.ok) {
+        const data = await resList.json();
+        if (data && Array.isArray(data.records)) {
+          serverRecords.push(...data.records);
+        }
+      }
+      if (resPresensi && resPresensi.ok) {
+        const data = await resPresensi.json();
+        if (data && Array.isArray(data.records)) {
+          data.records.forEach((r: Presensi) => {
+            if (r && r.siswaId && r.tanggal) {
+              const dup = serverRecords.some(sr => sr.siswaId === r.siswaId && sr.tanggal === r.tanggal && sr.waktu === r.waktu && sr.status === r.status);
+              if (!dup) serverRecords.push(r);
             }
           });
+        }
+      }
 
-          if (hasChanges) {
-            onSavePresensi(merged);
-            if (newlyScannedName) {
-              setCheckinNotif(`Siswa ${newlyScannedName} berhasil absen via QR Code!`);
-              setTimeout(() => setCheckinNotif(null), 4000);
+      if (!resList?.ok && !resPresensi?.ok) {
+        fetchStatusStr = `HTTP ${resList?.status || resPresensi?.status || 'ERR'}`;
+        errorMsg = 'Gagal terhubung ke endpoint /api/qr-presensi/list atau /api/presensi';
+      }
+
+      setServerApiData(serverRecords);
+
+      const savedPresensi = localStorage.getItem('smasa_presensi');
+      const scopedPresensi = loadPresensi();
+      const list: Presensi[] = savedPresensi ? JSON.parse(savedPresensi) : [];
+      const allSources = [...presensiList, ...scopedPresensi, ...list, ...serverRecords];
+
+      const validCheckins = allSources.filter(p => p && p.siswaId && p.tanggal);
+
+      let mergedNewCount = 0;
+      let mergedUpdatedCount = 0;
+      let newlyScannedName = '';
+
+      if (validCheckins.length > 0) {
+        const merged = [...presensiList];
+
+        validCheckins.forEach(qp => {
+          const idx = merged.findIndex(p => p.siswaId === qp.siswaId && p.tanggal === qp.tanggal);
+          if (idx === -1) {
+            merged.push(qp);
+            mergedNewCount++;
+            if (qp.metode === 'QR Code' || qp.status === 'Hadir') {
+              newlyScannedName = `${qp.siswaNama} (${qp.siswaKelas || (qp as any).kelas || ''})`;
+            }
+          } else {
+            const current = merged[idx];
+            if (
+              (qp.status === 'Hadir' && current.status !== 'Hadir') ||
+              (qp.metode === 'QR Code' && current.metode !== 'QR Code') ||
+              (qp.waktu && !current.waktu)
+            ) {
+              merged[idx] = {
+                ...current,
+                ...qp,
+                metode: qp.metode || current.metode || 'QR Code'
+              };
+              mergedUpdatedCount++;
+              if (qp.metode === 'QR Code' || qp.status === 'Hadir') {
+                newlyScannedName = `${qp.siswaNama} (${qp.siswaKelas || (qp as any).kelas || ''})`;
+              }
             }
           }
-        }
-      } catch (e) {
-        console.error("Error polling checkins:", e);
-      }
-    };
+        });
 
-    const poll = setInterval(syncCheckins, 1500);
-    syncCheckins();
+        if (mergedNewCount > 0 || mergedUpdatedCount > 0) {
+          onSavePresensi(merged);
+          if (newlyScannedName) {
+            setCheckinNotif(`Siswa ${newlyScannedName} berhasil absen via QR Code!`);
+            setTimeout(() => setCheckinNotif(null), 4000);
+          }
+        }
+
+        setNetworkLogs(prev => [
+          {
+            id: `LOG_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            time: timeStr,
+            endpoint: '/api/presensi & /api/qr-presensi/list',
+            status: fetchStatusStr,
+            recordsReceivedCount: serverRecords.length,
+            recordsReceivedSample: serverRecords.length > 0 ? JSON.stringify(serverRecords.slice(0, 2)) : '[]',
+            mergedNewCount,
+            mergedUpdatedCount,
+            presensiListBefore: presensiList.length,
+            presensiListAfter: merged.length,
+            isManualTrigger: isManual,
+            errorDetails: errorMsg || undefined
+          },
+          ...prev.slice(0, 79)
+        ]);
+      } else {
+        setNetworkLogs(prev => [
+          {
+            id: `LOG_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            time: timeStr,
+            endpoint: '/api/presensi & /api/qr-presensi/list',
+            status: fetchStatusStr,
+            recordsReceivedCount: serverRecords.length,
+            recordsReceivedSample: '[]',
+            mergedNewCount: 0,
+            mergedUpdatedCount: 0,
+            presensiListBefore: presensiList.length,
+            presensiListAfter: presensiList.length,
+            isManualTrigger: isManual,
+            errorDetails: errorMsg || undefined
+          },
+          ...prev.slice(0, 79)
+        ]);
+      }
+    } catch (e: any) {
+      console.error("Error in performSyncAndLog:", e);
+      setNetworkLogs(prev => [
+        {
+          id: `LOG_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          time: timeStr,
+          endpoint: '/api/presensi & /api/qr-presensi/list',
+          status: 'FETCH_ERROR',
+          recordsReceivedCount: 0,
+          recordsReceivedSample: '[]',
+          mergedNewCount: 0,
+          mergedUpdatedCount: 0,
+          presensiListBefore: presensiList.length,
+          presensiListAfter: presensiList.length,
+          isManualTrigger: isManual,
+          errorDetails: e?.message || String(e)
+        },
+        ...prev.slice(0, 79)
+      ]);
+    } finally {
+      if (isManual) setIsSyncingNow(false);
+    }
+  };
+
+  useEffect(() => {
+    performSyncAndLog(false);
+    const poll = setInterval(() => {
+      performSyncAndLog(false);
+    }, 2000);
 
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'smasa_presensi' || (e.key && e.key.includes('presensi'))) {
-        syncCheckins();
+        performSyncAndLog(false);
       }
     };
 
@@ -428,25 +542,43 @@ export default function KelolaPresensi({
         )}
       </div>
 
-      {/* Mode Switcher */}
-      <div className="flex p-1 bg-slate-100 rounded-2xl w-fit shadow-inner">
+      {/* Mode Switcher & Diagnostic Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex p-1 bg-slate-100 rounded-2xl w-fit shadow-inner">
+          <button
+            onClick={() => setActiveMode('manual')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeMode === 'manual' ? 'bg-white text-blue-600 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <UserCheck size={14} />
+            <span>Pencatatan Manual (Tabel)</span>
+          </button>
+          <button
+            onClick={() => setActiveMode('qr')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeMode === 'qr' ? 'bg-white text-blue-600 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <QrCode size={14} />
+            <span>Presensi QR-Code (Live Monitor)</span>
+          </button>
+        </div>
+
         <button
-          onClick={() => setActiveMode('manual')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeMode === 'manual' ? 'bg-white text-blue-600 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-800'
-          }`}
+          type="button"
+          onClick={() => setShowDiagnosticsModal(true)}
+          className="px-3.5 py-2 rounded-xl bg-slate-900 text-slate-100 hover:bg-slate-800 font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95 transition-all shadow-sm border border-slate-700/60"
+          id="btn-open-diagnostik"
+          title="Buka Inspector Log Sync & Data Raw JSON Presensi"
         >
-          <UserCheck size={14} />
-          <span>Pencatatan Manual (Tabel)</span>
-        </button>
-        <button
-          onClick={() => setActiveMode('qr')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeMode === 'qr' ? 'bg-white text-blue-600 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <QrCode size={14} />
-          <span>Presensi QR-Code (Live Monitor)</span>
+          <Terminal size={14} className="text-emerald-400 animate-pulse" />
+          <span>Diagnostik &amp; Log Sync</span>
+          {networkLogs.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+              {networkLogs.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1058,6 +1190,489 @@ export default function KelolaPresensi({
                   className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-all cursor-pointer shadow-lg shadow-blue-200"
                 >
                   Tutup Tampilan Perbesar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Diagnostic & Network Sync Inspector Modal */}
+      <AnimatePresence>
+        {showDiagnosticsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDiagnosticsModal(false)}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 15 }}
+              className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl z-10 flex flex-col max-h-[90vh] overflow-hidden text-slate-100"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
+                    <Terminal size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+                      Inspector Log Sync &amp; Raw JSON Presensi
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold">
+                        LIVE 2s
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Pelacakan real-time lalu lintas jaringan <code className="text-emerald-300 bg-slate-900 px-1 py-0.5 rounded">/api/presensi</code> &amp; memori state
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDiagnosticsModal(false)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Status Summary Cards */}
+              <div className="p-4 bg-slate-900/90 border-b border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800/80">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">State React Memory</span>
+                  <div className="flex items-baseline gap-1.5 mt-1 font-mono">
+                    <span className="text-lg font-black text-emerald-400">{presensiList.length}</span>
+                    <span className="text-[10px] text-slate-400">records</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800/80">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">LocalStorage State</span>
+                  <div className="flex items-baseline gap-1.5 mt-1 font-mono">
+                    <span className="text-lg font-black text-blue-400">{loadPresensi().length}</span>
+                    <span className="text-[10px] text-slate-400">records</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800/80">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Server Endpoint</span>
+                  <div className="flex items-baseline gap-1.5 mt-1 font-mono">
+                    <span className="text-lg font-black text-amber-400">{serverApiData ? serverApiData.length : 0}</span>
+                    <span className="text-[10px] text-slate-400">records</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800/80">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Log Events</span>
+                  <div className="flex items-baseline gap-1.5 mt-1 font-mono">
+                    <span className="text-lg font-black text-purple-400">{networkLogs.length}</span>
+                    <span className="text-[10px] text-slate-400">requests</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tab Selector Bar */}
+              <div className="px-6 py-2.5 bg-slate-950/50 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDiagnosticTab('network')}
+                    className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      diagnosticTab === 'network'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    <Activity size={14} />
+                    <span>Live Network Logs ({networkLogs.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDiagnosticTab('json')}
+                    className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      diagnosticTab === 'json'
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    <FileJson size={14} />
+                    <span>Raw JSON State</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDiagnosticTab('session')}
+                    className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      diagnosticTab === 'session'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    <Wifi size={14} />
+                    <span>Session &amp; Class Analysis</span>
+                  </button>
+                </div>
+
+                {diagnosticTab === 'network' && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => performSyncAndLog(true)}
+                      disabled={isSyncingNow}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                    >
+                      <RefreshCw size={13} className={isSyncingNow ? 'animate-spin' : ''} />
+                      <span>{isSyncingNow ? 'Syncing...' : '⚡ Sync Sekarang'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNetworkLogs([])}
+                      className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                      title="Bersihkan Log"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto flex-1 scrollbar-thin">
+                {/* TAB 1: NETWORK LOGS */}
+                {diagnosticTab === 'network' && (
+                  <div className="space-y-4">
+                    {/* Log Filters */}
+                    <div className="flex items-center justify-between text-xs pb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400 font-bold">Filter Log:</span>
+                        <button
+                          type="button"
+                          onClick={() => setLogFilter('all')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                            logFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          Semua ({networkLogs.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLogFilter('changed')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                            logFilter === 'changed' ? 'bg-emerald-500/30 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          Ada Merge/Data Baru ({networkLogs.filter(l => l.mergedNewCount > 0 || l.mergedUpdatedCount > 0).length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLogFilter('error')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                            logFilter === 'error' ? 'bg-rose-500/30 text-rose-300' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          Error ({networkLogs.filter(l => l.status !== '200 OK').length})
+                        </button>
+                      </div>
+
+                      <span className="text-[10px] text-slate-500 font-mono">Interval otomatis: 2000ms</span>
+                    </div>
+
+                    {/* Log Terminal Table */}
+                    <div className="bg-slate-950 rounded-2xl border border-slate-800 p-4 font-mono text-xs space-y-2 max-h-[420px] overflow-y-auto">
+                      {(() => {
+                        const filteredLogs = networkLogs.filter(l => {
+                          if (logFilter === 'changed') return l.mergedNewCount > 0 || l.mergedUpdatedCount > 0;
+                          if (logFilter === 'error') return l.status !== '200 OK';
+                          return true;
+                        });
+
+                        if (filteredLogs.length === 0) {
+                          return (
+                            <div className="py-12 text-center text-slate-500 space-y-2">
+                              <Activity size={24} className="mx-auto opacity-40 animate-pulse text-emerald-400" />
+                              <p>Belum ada entri log jaringan tercatat. Menunggu polling otomatis berikutnya...</p>
+                            </div>
+                          );
+                        }
+
+                        return filteredLogs.map((log) => {
+                          const hasMerge = log.mergedNewCount > 0 || log.mergedUpdatedCount > 0;
+                          const isError = log.status !== '200 OK';
+
+                          return (
+                            <div
+                              key={log.id}
+                              className={`p-3 rounded-xl border text-[11px] transition-all space-y-1.5 ${
+                                isError
+                                  ? 'bg-rose-950/40 border-rose-800/80 text-rose-200'
+                                  : hasMerge
+                                  ? 'bg-emerald-950/50 border-emerald-700/80 text-emerald-100 shadow-[0_0_10px_rgba(16,185,129,0.1)]'
+                                  : 'bg-slate-900/60 border-slate-800/80 text-slate-300'
+                              }`}
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-slate-500 font-bold">[{log.time}]</span>
+                                  <span className="text-cyan-400 font-bold">{log.endpoint}</span>
+                                  {log.isManualTrigger && (
+                                    <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[9px] uppercase font-bold">
+                                      Manual Trigger
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                                    isError ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  }`}>
+                                    {log.status}
+                                  </span>
+
+                                  <span className="text-slate-400 text-[10px]">
+                                    Diterima dari server: <b className="text-white">{log.recordsReceivedCount} records</b>
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-800/60">
+                                <div>
+                                  {hasMerge ? (
+                                    <span className="text-emerald-400 font-bold flex items-center gap-1">
+                                      <CheckCircle2 size={12} /> State Updated: +{log.mergedNewCount} record baru, +{log.mergedUpdatedCount} update status/metode
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400">
+                                      State Merged: Tidak ada perubahan baru (Total local state: {log.presensiListAfter} items)
+                                    </span>
+                                  )}
+                                </div>
+
+                                <span className="text-slate-500">
+                                  Presensi count: {log.presensiListBefore} → {log.presensiListAfter}
+                                </span>
+                              </div>
+
+                              {log.recordsReceivedSample !== '[]' && (
+                                <div className="mt-1 pt-1 border-t border-slate-800/40 text-[10px] text-slate-400 break-all truncate">
+                                  <span className="text-slate-500 font-bold">Sample Payload:</span> {log.recordsReceivedSample}
+                                </div>
+                              )}
+
+                              {log.errorDetails && (
+                                <div className="text-rose-400 font-bold text-[10px] flex items-center gap-1">
+                                  <AlertTriangle size={11} /> Error: {log.errorDetails}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: RAW JSON STATE */}
+                {diagnosticTab === 'json' && (
+                  <div className="space-y-4">
+                    {/* JSON Control Bar */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-400 font-bold">Sumber Data:</span>
+                        <div className="flex p-0.5 bg-slate-900 rounded-xl border border-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => setJsonDataSource('presensiList')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                              jsonDataSource === 'presensiList' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            React State ({presensiList.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setJsonDataSource('localStorage')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                              jsonDataSource === 'localStorage' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            LocalStorage ({loadPresensi().length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setJsonDataSource('serverApi')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                              jsonDataSource === 'serverApi' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Server Endpoint ({serverApiData ? serverApiData.length : 0})
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <div className="relative flex-1 sm:flex-initial">
+                          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                          <input
+                            type="text"
+                            placeholder="Cari nama, kelas, NIS..."
+                            value={jsonSearchQuery}
+                            onChange={(e) => setJsonSearchQuery(e.target.value)}
+                            className="pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full sm:w-48"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            let sourceData: any = presensiList;
+                            if (jsonDataSource === 'localStorage') sourceData = loadPresensi();
+                            if (jsonDataSource === 'serverApi') sourceData = serverApiData || [];
+                            navigator.clipboard.writeText(JSON.stringify(sourceData, null, 2));
+                            setCopiedJsonToast(true);
+                            setTimeout(() => setCopiedJsonToast(false), 3000);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                        >
+                          <Copy size={13} />
+                          <span>{copiedJsonToast ? '✅ Copied!' : 'Copy JSON'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Prettified Code Box */}
+                    {(() => {
+                      let activeArray: Presensi[] = presensiList;
+                      if (jsonDataSource === 'localStorage') activeArray = loadPresensi();
+                      if (jsonDataSource === 'serverApi') activeArray = serverApiData || [];
+
+                      const q = jsonSearchQuery.trim().toLowerCase();
+                      const filteredData = q
+                        ? activeArray.filter(
+                            (p) =>
+                              (p.siswaNama && p.siswaNama.toLowerCase().includes(q)) ||
+                              (p.siswaKelas && p.siswaKelas.toLowerCase().includes(q)) ||
+                              (p.siswaId && p.siswaId.toLowerCase().includes(q)) ||
+                              (p.tanggal && p.tanggal.includes(q))
+                          )
+                        : activeArray;
+
+                      return (
+                        <div className="relative bg-slate-950 rounded-2xl border border-slate-800 p-4 font-mono text-xs overflow-x-auto max-h-[420px] scrollbar-thin">
+                          <div className="text-[10px] text-slate-500 mb-2 font-mono">
+                            Showing {filteredData.length} of {activeArray.length} items
+                          </div>
+                          <pre className="text-emerald-400 whitespace-pre-wrap break-all leading-relaxed">
+                            {JSON.stringify(filteredData, null, 2)}
+                          </pre>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* TAB 3: SESSION & CLASS MATCH DIAGNOSTICS */}
+                {diagnosticTab === 'session' && (
+                  <div className="space-y-4 text-xs">
+                    <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Wifi size={16} className="text-amber-400" /> Sesi QR Presensi Aktif
+                      </h4>
+
+                      {qrActiveSession ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-900 rounded-xl border border-slate-800 font-mono text-[11px]">
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Token Kode</span>
+                            <span className="text-amber-300 font-black text-sm">{qrActiveSession.token}</span>
+                          </div>
+
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Kelas Sesi</span>
+                            <span className="text-white font-bold">{qrActiveSession.kelas}</span>
+                          </div>
+
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Tanggal</span>
+                            <span className="text-white font-bold">{qrActiveSession.tanggal}</span>
+                          </div>
+
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Sisa Waktu Sesi</span>
+                            <span className="text-emerald-400 font-bold">{timeLeft} detik</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-slate-900/60 rounded-xl border border-slate-800 text-slate-400 text-center">
+                          Belum ada sesi presensi QR yang diaktifkan oleh Guru. Klik "Mulai Sesi QR Code" di dasbor untuk membuat token baru.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Class Name Match Diagnostic Checklist */}
+                    <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Database size={16} className="text-blue-400" /> Analisis Kesesuaian Nama Kelas Siswa
+                      </h4>
+
+                      <div className="space-y-2">
+                        {(() => {
+                          const sessClass = qrActiveSession?.kelas || selectedKelas;
+                          const normSessClass = String(sessClass).trim().toLowerCase().replace(/\s+/g, '');
+
+                          const matchedStudents = siswaList.filter(
+                            (s) => String(s.kelas).trim().toLowerCase().replace(/\s+/g, '') === normSessClass
+                          );
+
+                          return (
+                            <div className="space-y-2">
+                              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between">
+                                <div>
+                                  <span className="text-slate-400 font-bold block">Kelas Dipilih:</span>
+                                  <span className="text-white font-mono font-bold">{sessClass}</span>
+                                </div>
+
+                                <div className="text-right">
+                                  <span className="text-slate-400 font-bold block">Siswa Terdeteksi:</span>
+                                  <span className="text-emerald-400 font-mono font-black text-sm">
+                                    {matchedStudents.length} / {siswaList.length} Siswa
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-[11px] text-slate-400 space-y-1 leading-relaxed">
+                                <p>
+                                  ✅ Sistem menggunakan pembandingan nama kelas yang <b>case-insensitive</b> &amp; <b>mencopot spasi ganda</b>.
+                                </p>
+                                <p>
+                                  Contoh: <code className="text-emerald-300">"XI-MIPA-1"</code> dan <code className="text-emerald-300">"XI MIPA 1"</code> akan otomatis dicocokkan dengan sempurna.
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                <span>Tekan <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-mono">ESC</kbd> untuk menutup</span>
+                <button
+                  type="button"
+                  onClick={() => setShowDiagnosticsModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  Tutup Inspector
                 </button>
               </div>
             </motion.div>
