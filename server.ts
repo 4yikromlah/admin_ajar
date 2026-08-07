@@ -223,12 +223,15 @@ app.get('/api/qr-session/active', (req, res) => {
   saveQrSessionsToDisk();
 
   if (kelas) {
-    const targetKelas = String(kelas).trim().toLowerCase();
-    const active = serverActiveQrSessions.find(s => String(s.kelas).trim().toLowerCase() === targetKelas);
+    const targetKelas = String(kelas).trim().toLowerCase().replace(/\s+/g, '');
+    let active = serverActiveQrSessions.find(s => String(s.kelas).trim().toLowerCase().replace(/\s+/g, '') === targetKelas);
+    if (!active && serverActiveQrSessions.length > 0) {
+      active = serverActiveQrSessions[serverActiveQrSessions.length - 1];
+    }
     return res.json({ status: 'success', session: active || null });
   }
 
-  return res.json({ status: 'success', sessions: serverActiveQrSessions });
+  return res.json({ status: 'success', sessions: serverActiveQrSessions, session: serverActiveQrSessions[serverActiveQrSessions.length - 1] || null });
 });
 
 app.post('/api/qr-session', (req, res) => {

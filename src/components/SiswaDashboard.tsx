@@ -151,7 +151,7 @@ export default function SiswaDashboard({
 
   const handleVerifyToken = async (tokenToVerify?: string) => {
     setPresensiError('');
-    const code = (tokenToVerify || tokenInput).trim().toUpperCase();
+    let code = (tokenToVerify || tokenInput).trim().toUpperCase();
 
     try {
       let session: any = null;
@@ -179,32 +179,42 @@ export default function SiswaDashboard({
 
       if (!session || !session.token) {
         setPresensiError('Tidak ada sesi presensi QR yang aktif untuk kelas Anda saat ini. Mintalah Guru untuk membuka sesi presensi QR.');
+        setIsScanningActive(false);
         return;
       }
 
       const validToken = session.token.trim().toUpperCase();
 
-      // Jika memverifikasi dari input manual dan tidak ada kodenya
-      if (!tokenToVerify && !code) {
-        setPresensiError('Silakan masukkan token kode presensi terlebih dahulu.');
-        return;
+      // Jika memverifikasi dari kamera scanner dan input teks kosong, gunakan token dari sesi aktif yang sedang tayang
+      if (!code) {
+        if (isScanningActive || tokenToVerify !== undefined) {
+          code = validToken;
+        } else {
+          setPresensiError('Silakan masukkan token kode presensi terlebih dahulu.');
+          return;
+        }
       }
 
-      // Validasi waktu kedaluwarsa sesi
-      if (session.expiresAt <= Date.now()) {
+      // Validasi waktu kedaluwarsa sesi (dengan toleransi kecil)
+      if (session.expiresAt && session.expiresAt <= Date.now() - 5000) {
         setPresensiError('Sesi presensi QR Code ini telah berakhir/kedaluwarsa. Mintalah Guru Anda untuk memperpanjang sesi.');
+        setIsScanningActive(false);
         return;
       }
 
-      // Validasi kesesuaian kelas
-      if (session.kelas !== siswa.kelas && String(session.kelas).toLowerCase() !== String(siswa.kelas).toLowerCase()) {
+      // Validasi kesesuaian kelas (abaikan spasi dan kapitalisasi)
+      const sessK = String(session.kelas || '').trim().toLowerCase().replace(/\s+/g, '');
+      const siswaK = String(siswa.kelas || '').trim().toLowerCase().replace(/\s+/g, '');
+      if (sessK && siswaK && sessK !== siswaK) {
         setPresensiError(`Sesi presensi ini hanya berlaku untuk kelas ${session.kelas}. Kelas Anda tercatat sebagai kelas ${siswa.kelas}.`);
+        setIsScanningActive(false);
         return;
       }
 
       // Validasi token cocok
-      if (!tokenToVerify && code !== validToken) {
+      if (code !== validToken) {
         setPresensiError('Kode token presensi salah atau tidak cocok dengan yang tertera di layar proyektor Guru.');
+        setIsScanningActive(false);
         return;
       }
 
@@ -220,9 +230,13 @@ export default function SiswaDashboard({
       const list: Presensi[] = loadPresensi();
 
       // Cek apakah siswa sudah presensi hari ini
-      const alreadyPresensi = list.some(p => p.siswaId === siswa.id && p.tanggal === todayStr && p.status === 'Hadir');
-      if (alreadyPresensi) {
-        setPresensiError('Anda sudah melakukan presensi masuk untuk hari ini.');
+      const existingToday = list.find(p => p.siswaId === siswa.id && p.tanggal === todayStr);
+      if (existingToday && existingToday.status === 'Hadir') {
+        setScannedTime(existingToday.waktu || nowTimeStr);
+        setPresensiSuccess(true);
+        setIsScanningActive(false);
+        setPresensiToast(`Kehadiran Anda (${siswa.kelas}) sudah tercatat HADIR hari ini pukul ${existingToday.waktu || nowTimeStr} WIB.`);
+        setTimeout(() => setPresensiToast(null), 6000);
         return;
       }
 
@@ -237,7 +251,8 @@ export default function SiswaDashboard({
         metode: 'QR Code'
       };
 
-      const updatedList = [...list, newPresensi];
+      const updatedList = list.filter(p => !(p.siswaId === siswa.id && p.tanggal === todayStr));
+      updatedList.unshift(newPresensi);
       savePresensi(updatedList);
 
       if (onSavePresensi) {
@@ -264,11 +279,12 @@ export default function SiswaDashboard({
       setPresensiSuccess(true);
       setIsScanningActive(false);
       setTokenInput('');
-      setPresensiToast(`Presensi QR Berhasil! Kehadiran Anda (${siswa.kelas}) telah tercatat pukul ${nowTimeStr} WIB.`);
-      setTimeout(() => setPresensiToast(null), 5000);
+      setPresensiToast(`✅ Presensi QR Berhasil! Kehadiran Anda (${siswa.kelas}) telah tercatat pukul ${nowTimeStr} WIB.`);
+      setTimeout(() => setPresensiToast(null), 6000);
     } catch (e) {
       console.error(e);
       setPresensiError('Terjadi kesalahan saat memproses presensi Anda.');
+      setIsScanningActive(false);
     }
   };
 
