@@ -16,7 +16,8 @@ const PORT = 3000;
 const PRIMARY_CONFIG_FILE = path.join(process.cwd(), 'spreadsheet_config.json');
 const FALLBACK_CONFIG_FILE = path.join(__dirnameSafe, 'spreadsheet_config.json');
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const DEFAULT_SUPERADMIN_SPREADSHEET_URL = 'https://script.google.com/macros/s/AKfycbzb1VFTuPrmr1UpRePoi2m3IIFNJKXsxsceDpgkbFm0lsw71BOMjrTeCWCZhQxio9hW/exec';
 

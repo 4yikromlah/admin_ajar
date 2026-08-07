@@ -281,20 +281,20 @@ export default function App() {
           if (newUrl !== oldUrl) {
             alert("Koneksi Spreadsheet Berhasil! Seluruh data Anda telah berhasil diunggah ke Google Sheet.");
           }
-          return true;
         } else {
-          setSyncError("Gagal terhubung ke URL Spreadsheet");
-          return false;
+          console.warn("[Settings Update] Sinkronisasi ke Google Sheets belum berhasil, data tersimpan secara lokal.");
+          setSyncError("Data tersimpan secara lokal di aplikasi. Sinkronisasi ke Spreadsheet gagal/tertunda.");
         }
       } catch (e: any) {
-        setSyncError("Gagal terhubung ke URL Spreadsheet");
-        return false;
+        console.warn("[Settings Update] Error sinkronisasi ke Google Sheets:", e);
+        setSyncError("Data tersimpan secara lokal di aplikasi.");
       } finally {
         setIsSyncing(false);
       }
-    } else {
-      return await syncPush();
     }
+    
+    // Selalu kembalikan true karena pengaturan (termasuk logo) sudah sukses tersimpan di database lokal aplikasi
+    return true;
   };
 
   // Sinkronisasi daftar guru dari spreadsheet pusat & verifikasi persetujuan akun saat mount & periodik
