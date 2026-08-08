@@ -113,6 +113,35 @@ interface SiswaDashboardProps {
   lastSyncTime?: Date | null;
 }
 
+function playAudioBeep() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+    osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
+    osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) {}
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try { navigator.vibrate([100, 50, 100]); } catch (e) {}
+  }
+}
+
+const getLocalTodayDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function SiswaDashboard({
   siswa,
   nilaiList,
@@ -219,7 +248,7 @@ export default function SiswaDashboard({
       }
 
       // 4. Lulus validasi! Daftarkan kehadiran
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getLocalTodayDateStr();
       const nowTimeStr = new Date().toLocaleTimeString('id-ID', {
         hour: '2-digit',
         minute: '2-digit',
@@ -230,8 +259,15 @@ export default function SiswaDashboard({
       const list: Presensi[] = loadPresensi();
 
       // Cek apakah siswa sudah presensi hari ini
-      const existingToday = list.find(p => p.siswaId === siswa.id && p.tanggal === todayStr);
+      const existingToday = list.find(p => {
+        if (!p) return false;
+        const pDate = (p.tanggal || '').split('T')[0];
+        const isSameStudent = p.siswaId === siswa.id || p.siswaId === siswa.nis || (p.siswaNama && siswa.nama && p.siswaNama.trim().toLowerCase() === siswa.nama.trim().toLowerCase());
+        return isSameStudent && (pDate === todayStr || pDate === new Date().toISOString().split('T')[0]);
+      });
+
       if (existingToday && existingToday.status === 'Hadir') {
+        playAudioBeep();
         setScannedTime(existingToday.waktu || nowTimeStr);
         setPresensiSuccess(true);
         setIsScanningActive(false);
@@ -251,13 +287,22 @@ export default function SiswaDashboard({
         metode: 'QR Code'
       };
 
-      const updatedList = list.filter(p => !(p.siswaId === siswa.id && p.tanggal === todayStr));
+      const updatedList = list.filter(p => {
+        if (!p) return false;
+        const pDate = (p.tanggal || '').split('T')[0];
+        const isSameStudent = p.siswaId === siswa.id || p.siswaId === siswa.nis || (p.siswaNama && siswa.nama && p.siswaNama.trim().toLowerCase() === siswa.nama.trim().toLowerCase());
+        return !(isSameStudent && pDate === todayStr);
+      });
       updatedList.unshift(newPresensi);
       savePresensi(updatedList);
 
       if (onSavePresensi) {
         onSavePresensi(updatedList);
       }
+
+      try {
+        window.dispatchEvent(new CustomEvent('smasa_presensi_updated', { detail: newPresensi }));
+      } catch (e) {}
 
       // Kirim data presensi ke Server untuk sinkronisasi real-time lintas perangkat
       try {
@@ -275,6 +320,7 @@ export default function SiswaDashboard({
         console.warn("[QR Checkin Server Sync Error]", err);
       }
 
+      playAudioBeep();
       setScannedTime(nowTimeStr);
       setPresensiSuccess(true);
       setIsScanningActive(false);
@@ -1331,10 +1377,19 @@ export default function SiswaDashboard({
               </div>
 
               {(() => {
-                const todayStr = new Date().toISOString().split('T')[0];
-                const todayPresensi = presensiList.find(
-                  (p) => p.siswaId === siswa.id && p.tanggal === todayStr && p.status === 'Hadir'
-                );
+                const todayStr = getLocalTodayDateStr();
+                const todayPresensi = presensiList.find((p) => {
+                  if (!p || p.status !== 'Hadir') return false;
+                  const pDate = (p.tanggal || '').split('T')[0];
+                  const isSameDate = pDate === todayStr || pDate === new Date().toISOString().split('T')[0];
+                  const isSameStudent = (
+                    p.siswaId === siswa.id ||
+                    p.siswaId === siswa.nis ||
+                    (siswa.nis && p.siswaId === siswa.nis) ||
+                    (p.siswaNama && siswa.nama && p.siswaNama.trim().toLowerCase() === siswa.nama.trim().toLowerCase())
+                  );
+                  return isSameDate && isSameStudent;
+                });
 
                 if (todayPresensi || presensiSuccess) {
                   return (

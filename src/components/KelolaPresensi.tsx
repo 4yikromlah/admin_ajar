@@ -37,6 +37,23 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Siswa, Presensi, AttendanceStatus } from '../types';
 import { loadPresensi } from '../data';
 
+function playAudioBeep() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (e) {}
+}
+
 export interface SyncLogEntry {
   id: string;
   time: string;
@@ -177,30 +194,67 @@ export default function KelolaPresensi({
       if (validCheckins.length > 0) {
         const merged = [...presensiList];
 
+        const normDate = (d: string) => String(d || '').trim().split('T')[0];
+
+        const isSameStudentHelper = (p1: any, p2: any) => {
+          if (!p1 || !p2) return false;
+          if (p1.siswaId && p2.siswaId && p1.siswaId === p2.siswaId) return true;
+          if (p1.siswaId && p2.nis && String(p1.siswaId) === String(p2.nis)) return true;
+          if (p2.siswaId && p1.nis && String(p2.siswaId) === String(p1.nis)) return true;
+          if (p1.siswaId && p2.siswaId && (p1.siswaId.startsWith(p2.siswaId) || p2.siswaId.startsWith(p1.siswaId))) return true;
+          if (p1.siswaNama && p2.siswaNama && p1.siswaNama.trim().toLowerCase() === p2.siswaNama.trim().toLowerCase()) return true;
+          if (p1.siswaNama && p2.nama && p1.siswaNama.trim().toLowerCase() === p2.nama.trim().toLowerCase()) return true;
+          return false;
+        };
+
         validCheckins.forEach(qp => {
-          const idx = merged.findIndex(p => p.siswaId === qp.siswaId && p.tanggal === qp.tanggal);
+          const qpDate = normDate(qp.tanggal);
+          const idx = merged.findIndex(p => {
+            const pDate = normDate(p.tanggal);
+            return isSameStudentHelper(qp, p) && pDate === qpDate;
+          });
+
+          const studentInfo = siswaList.find(s => isSameStudentHelper(qp, s));
+
           if (idx === -1) {
-            merged.push(qp);
+            const newRec: Presensi = {
+              id: qp.id || `P${Date.now()}_${qp.siswaId}`,
+              siswaId: studentInfo?.id || qp.siswaId,
+              siswaNama: studentInfo?.nama || qp.siswaNama,
+              siswaKelas: studentInfo?.kelas || qp.siswaKelas || (qp as any).kelas || '',
+              tanggal: qpDate,
+              status: qp.status || 'Hadir',
+              waktu: qp.waktu || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+              metode: qp.metode || 'QR Code',
+            };
+            merged.push(newRec);
             mergedNewCount++;
-            if (qp.metode === 'QR Code' || qp.status === 'Hadir') {
-              newlyScannedName = `${qp.siswaNama} (${qp.siswaKelas || (qp as any).kelas || ''})`;
+            if (newRec.status === 'Hadir') {
+              newlyScannedName = `${newRec.siswaNama} (${newRec.siswaKelas || ''})`;
             }
           } else {
             const current = merged[idx];
+            const updatedRec: Presensi = {
+              ...current,
+              ...qp,
+              siswaId: current.siswaId || studentInfo?.id || qp.siswaId,
+              siswaNama: current.siswaNama || studentInfo?.nama || qp.siswaNama,
+              siswaKelas: current.siswaKelas || studentInfo?.kelas || qp.siswaKelas || (qp as any).kelas || '',
+              tanggal: qpDate,
+              status: 'Hadir',
+              waktu: qp.waktu || current.waktu || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+              metode: qp.metode || current.metode || 'QR Code',
+            };
+
             if (
-              (qp.status === 'Hadir' && current.status !== 'Hadir') ||
-              (qp.metode === 'QR Code' && current.metode !== 'QR Code') ||
-              (qp.waktu && !current.waktu)
+              current.status !== updatedRec.status ||
+              current.metode !== updatedRec.metode ||
+              current.waktu !== updatedRec.waktu ||
+              !current.siswaKelas
             ) {
-              merged[idx] = {
-                ...current,
-                ...qp,
-                metode: qp.metode || current.metode || 'QR Code'
-              };
+              merged[idx] = updatedRec;
               mergedUpdatedCount++;
-              if (qp.metode === 'QR Code' || qp.status === 'Hadir') {
-                newlyScannedName = `${qp.siswaNama} (${qp.siswaKelas || (qp as any).kelas || ''})`;
-              }
+              newlyScannedName = `${updatedRec.siswaNama} (${updatedRec.siswaKelas || ''})`;
             }
           }
         });
@@ -208,6 +262,7 @@ export default function KelolaPresensi({
         if (mergedNewCount > 0 || mergedUpdatedCount > 0) {
           onSavePresensi(merged);
           if (newlyScannedName) {
+            playAudioBeep();
             setCheckinNotif(`Siswa ${newlyScannedName} berhasil absen via QR Code!`);
             setTimeout(() => setCheckinNotif(null), 4000);
           }
@@ -732,11 +787,25 @@ export default function KelolaPresensi({
                     </div>
                     <div className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full text-xs font-black font-mono">
                       {presensiList.filter(p => {
-                        const sameDate = p.tanggal === qrActiveSession.tanggal;
-                        const pK = String(p.siswaKelas || (p as any).kelas || '').trim().toLowerCase().replace(/\s+/g, '');
-                        const sessK = String(qrActiveSession.kelas || '').trim().toLowerCase().replace(/\s+/g, '');
-                        const sameClass = pK === sessK || siswaList.some(s => s.id === p.siswaId && String(s.kelas).trim().toLowerCase().replace(/\s+/g, '') === sessK);
-                        return sameDate && sameClass && p.status === 'Hadir';
+                        const norm = (d: string) => String(d || '').trim().split('T')[0];
+                        const pDate = norm(p.tanggal);
+                        const qDate = norm(qrActiveSession.tanggal);
+                        const todayDate = new Date().toLocaleDateString('sv-SE');
+                        const sameDate = pDate === qDate || pDate === todayDate;
+
+                        const pK = String(p.siswaKelas || (p as any).kelas || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+                        const sessK = String(qrActiveSession.kelas || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+
+                        const isMatchingClass = (
+                          (pK && sessK && (pK === sessK || pK.includes(sessK) || sessK.includes(pK))) ||
+                          siswaList.some(s => {
+                            const sClass = String(s.kelas || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+                            const isSameS = s.id === p.siswaId || s.nis === p.siswaId || (s.nama && p.siswaNama && s.nama.trim().toLowerCase() === p.siswaNama.trim().toLowerCase());
+                            return isSameS && (sClass === sessK || sClass.includes(sessK) || sessK.includes(sClass));
+                          })
+                        );
+
+                        return sameDate && isMatchingClass && p.status === 'Hadir';
                       }).length} / {siswaInClass.length} Siswa
                     </div>
                   </div>
@@ -744,13 +813,27 @@ export default function KelolaPresensi({
                   {/* Scanned Student List */}
                   <div className="flex-1 overflow-y-auto max-h-[360px] pr-1 divide-y divide-slate-100 scrollbar-thin">
                     {(() => {
-                      const sessK = String(qrActiveSession.kelas || '').trim().toLowerCase().replace(/\s+/g, '');
                       const checkins = presensiList
                         .filter(p => {
-                          const sameDate = p.tanggal === qrActiveSession.tanggal;
-                          const pK = String(p.siswaKelas || (p as any).kelas || '').trim().toLowerCase().replace(/\s+/g, '');
-                          const sameClass = pK === sessK || siswaList.some(s => s.id === p.siswaId && String(s.kelas).trim().toLowerCase().replace(/\s+/g, '') === sessK);
-                          return sameDate && sameClass && p.status === 'Hadir';
+                          const norm = (d: string) => String(d || '').trim().split('T')[0];
+                          const pDate = norm(p.tanggal);
+                          const qDate = norm(qrActiveSession.tanggal);
+                          const todayDate = new Date().toLocaleDateString('sv-SE');
+                          const sameDate = pDate === qDate || pDate === todayDate;
+
+                          const pK = String(p.siswaKelas || (p as any).kelas || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+                          const sessK = String(qrActiveSession.kelas || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+
+                          const isMatchingClass = (
+                            (pK && sessK && (pK === sessK || pK.includes(sessK) || sessK.includes(pK))) ||
+                            siswaList.some(s => {
+                              const sClass = String(s.kelas || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+                              const isSameS = s.id === p.siswaId || s.nis === p.siswaId || (s.nama && p.siswaNama && s.nama.trim().toLowerCase() === p.siswaNama.trim().toLowerCase());
+                              return isSameS && (sClass === sessK || sClass.includes(sessK) || sessK.includes(sClass));
+                            })
+                          );
+
+                          return sameDate && isMatchingClass && p.status === 'Hadir';
                         })
                         .sort((a, b) => (b.waktu || '').localeCompare(a.waktu || ''));
 
