@@ -172,6 +172,89 @@ export default function SiswaDashboard({
   const [scannedTime, setScannedTime] = useState('');
   const [isScanningActive, setIsScanningActive] = useState(false);
 
+  // Active QR Session State & Auto-Poll
+  const [activeQrSession, setActiveQrSession] = useState<any>(null);
+  const [isFetchingSession, setIsFetchingSession] = useState(false);
+
+  const checkActiveQrSession = async () => {
+    setIsFetchingSession(true);
+    let foundSession: any = null;
+
+    // 1. Ambil dari server dengan parameter kelas siswa
+    try {
+      const res = await fetch(`/api/qr-session/active?kelas=${encodeURIComponent(siswa.kelas)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.session) {
+          foundSession = data.session;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Jika tidak ada, coba panggil tanpa parameter kelas (fallback sesi global)
+    if (!foundSession) {
+      try {
+        const resAll = await fetch('/api/qr-session/active');
+        if (resAll.ok) {
+          const dataAll = await resAll.json();
+          if (dataAll && dataAll.session) {
+            foundSession = dataAll.session;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 3. Fallback ke localStorage lokal peramban
+    if (!foundSession) {
+      try {
+        const saved = localStorage.getItem('smasa_active_qr_session');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && (parsed.expiresAt || 0) + 15 * 60 * 1000 > Date.now()) {
+            foundSession = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (foundSession && foundSession.token) {
+      if ((foundSession.expiresAt || 0) + 15 * 60 * 1000 >= Date.now()) {
+        setActiveQrSession(foundSession);
+      } else {
+        setActiveQrSession(null);
+      }
+    } else {
+      setActiveQrSession(null);
+    }
+    setIsFetchingSession(false);
+  };
+
+  useEffect(() => {
+    checkActiveQrSession();
+    const interval = setInterval(checkActiveQrSession, 4000);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'smasa_active_qr_session') {
+        checkActiveQrSession();
+      }
+    };
+    const handleCustom = (e: any) => {
+      if (e.detail) {
+        setActiveQrSession(e.detail);
+      } else {
+        checkActiveQrSession();
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('smasa_qr_session_updated', handleCustom);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('smasa_qr_session_updated', handleCustom);
+    };
+  }, [siswa.kelas, activeTab]);
+
   // Stop scanning camera when tab is changed or unmounted
   useEffect(() => {
     if (activeTab !== 'qr-presensi') {
@@ -184,67 +267,77 @@ export default function SiswaDashboard({
     let code = (tokenToVerify || tokenInput).trim().toUpperCase();
 
     try {
-      let session: any = null;
+      let session: any = activeQrSession;
 
-      // 1. Ambil sesi aktif dari server terlebih dahulu (cross-device)
-      try {
-        const res = await fetch(`/api/qr-session/active?kelas=${encodeURIComponent(siswa.kelas)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.session) {
-            session = data.session;
-          }
-        }
-      } catch (err) {}
-
-      // 2. Fallback ke localStorage jika offline
+      // Ambil ulang jika belum ada di state
       if (!session) {
-        const activeSessionStr = localStorage.getItem('smasa_active_qr_session');
-        if (activeSessionStr) {
+        try {
+          const res = await fetch(`/api/qr-session/active?kelas=${encodeURIComponent(siswa.kelas)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.session) session = data.session;
+          }
+        } catch (err) {}
+
+        if (!session) {
           try {
-            session = JSON.parse(activeSessionStr);
-          } catch (e) {}
+            const resAll = await fetch('/api/qr-session/active');
+            if (resAll.ok) {
+              const dataAll = await resAll.json();
+              if (dataAll && dataAll.session) session = dataAll.session;
+            }
+          } catch (err) {}
+        }
+
+        if (!session) {
+          const activeSessionStr = localStorage.getItem('smasa_active_qr_session');
+          if (activeSessionStr) {
+            try {
+              session = JSON.parse(activeSessionStr);
+            } catch (e) {}
+          }
         }
       }
 
       if (!session || !session.token) {
-        setPresensiError('Tidak ada sesi presensi QR yang aktif untuk kelas Anda saat ini. Mintalah Guru untuk membuka sesi presensi QR.');
+        setPresensiError('Belum ada sesi presensi QR yang aktif. Klik "Cek Ulang Sesi" atau mintalah Guru untuk menekan "Mulai Sesi QR Presensi".');
         setIsScanningActive(false);
         return;
       }
 
       const validToken = session.token.trim().toUpperCase();
 
-      // Jika memverifikasi dari kamera scanner dan input teks kosong, gunakan token dari sesi aktif yang sedang tayang
+      // Jika memverifikasi dari kamera scanner atau dari tombol instan dan input teks kosong, otomatis gunakan token aktif
       if (!code) {
-        if (isScanningActive || tokenToVerify !== undefined) {
+        if (isScanningActive || tokenToVerify !== undefined || session) {
           code = validToken;
+          setTokenInput(validToken);
         } else {
           setPresensiError('Silakan masukkan token kode presensi terlebih dahulu.');
           return;
         }
       }
 
-      // Validasi waktu kedaluwarsa sesi (dengan toleransi kecil)
-      if (session.expiresAt && session.expiresAt <= Date.now() - 5000) {
-        setPresensiError('Sesi presensi QR Code ini telah berakhir/kedaluwarsa. Mintalah Guru Anda untuk memperpanjang sesi.');
+      // Validasi waktu kedaluwarsa sesi (dengan toleransi 15 menit)
+      if (session.expiresAt && session.expiresAt + 15 * 60 * 1000 <= Date.now()) {
+        setPresensiError('Sesi presensi QR Code ini telah berakhir. Mintalah Guru Anda untuk memperpanjang sesi.');
         setIsScanningActive(false);
         return;
       }
 
-      // Validasi kesesuaian kelas (abaikan spasi, tanda hubung, titik, dan kapitalisasi)
+      // Validasi kesesuaian kelas (toleran)
       const normK = (str: string) => String(str || '').trim().toLowerCase().replace(/[\s\-_.]+/g, '');
       const sessK = normK(session.kelas);
       const siswaK = normK(siswa.kelas);
-      if (sessK && siswaK && sessK !== siswaK && !sessK.includes(siswaK) && !siswaK.includes(sessK)) {
-        setPresensiError(`Sesi presensi ini hanya berlaku untuk kelas ${session.kelas}. Kelas Anda tercatat sebagai kelas ${siswa.kelas}.`);
+      if (sessK && siswaK && sessK !== 'semuakelas' && sessK !== 'semua' && sessK !== siswaK && !sessK.includes(siswaK) && !siswaK.includes(sessK)) {
+        setPresensiError(`Sesi presensi ini dibuat untuk kelas ${session.kelas}. Kelas Anda tercatat sebagai ${siswa.kelas}.`);
         setIsScanningActive(false);
         return;
       }
 
       // Validasi token cocok
       if (code !== validToken) {
-        setPresensiError('Kode token presensi salah atau tidak cocok dengan yang tertera di layar proyektor Guru.');
+        setPresensiError(`Kode token (${code}) tidak cocok dengan token aktif (${validToken}) di layar Guru.`);
         setIsScanningActive(false);
         return;
       }
@@ -830,6 +923,34 @@ export default function SiswaDashboard({
                   <span className="text-3xl font-black text-blue-600 font-mono mt-0.5">{settings.kkm}</span>
                 </div>
               </div>
+
+              {/* Active QR Session Alert Banner on Dashboard */}
+              {activeQrSession && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                      <QrCode size={22} className="text-white" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-blue-200 block">Sesi Presensi QR Aktif!</span>
+                      <h4 className="text-xs font-black">Guru sedang membuka Presensi QR untuk Kelas {activeQrSession.kelas}</h4>
+                      <p className="text-[10px] text-blue-100 mt-0.5">
+                        Token Aktif: <strong className="font-mono bg-white/20 px-1.5 py-0.5 rounded">{activeQrSession.token}</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setActiveTab('qr-presensi');
+                      setTokenInput(activeQrSession.token);
+                      handleVerifyToken(activeQrSession.token);
+                    }}
+                    className="px-4 py-2 bg-white text-blue-700 hover:bg-blue-50 text-xs font-extrabold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 shrink-0"
+                  >
+                    Isi Presensi Sekarang
+                  </button>
+                </div>
+              )}
 
               {/* Stat Cards Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
@@ -1445,6 +1566,60 @@ export default function SiswaDashboard({
                   </div>
                 </div>
               </div>
+
+              {/* Status Live Sesi Presensi QR */}
+              {activeQrSession ? (
+                <div className="p-5 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 text-slate-800 space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                      <div>
+                        <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider block">Sesi Presensi QR Aktif Terdeteksi</span>
+                        <h4 className="text-sm font-black text-slate-800">Kelas Sesi: {activeQrSession.kelas}</h4>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1 rounded-xl bg-white border border-emerald-200 text-emerald-800 text-xs font-black font-mono shadow-sm">
+                        Token: {activeQrSession.token}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-emerald-500/20">
+                    <p className="text-[11px] text-slate-600">
+                      Guru sedang menayangkan sesi presensi. Klik tombol di bawah untuk verifikasi instan.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTokenInput(activeQrSession.token);
+                        handleVerifyToken(activeQrSession.token);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-md flex items-center gap-2 transition-all cursor-pointer active:scale-95"
+                    >
+                      <CheckCircle2 size={16} />
+                      <span>Gunakan Token & Isi Presensi Instan</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle size={20} className="text-amber-600 shrink-0" />
+                    <div>
+                      <h5 className="text-xs font-bold text-amber-900">Belum Ada Sesi QR Aktif Terdeteksi</h5>
+                      <p className="text-[10px] text-amber-700">Pastikan Guru Anda telah mengaktifkan presensi QR di dasbornya.</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={checkActiveQrSession}
+                    disabled={isFetchingSession}
+                    className="px-3.5 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer shrink-0"
+                  >
+                    <RefreshCw size={13} className={isFetchingSession ? "animate-spin" : ""} />
+                    <span>{isFetchingSession ? "Mengecek..." : "Cek Ulang Sesi"}</span>
+                  </button>
+                </div>
+              )}
 
               {(() => {
                 const todayStr = getLocalTodayDateStr();

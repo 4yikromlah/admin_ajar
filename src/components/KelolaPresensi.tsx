@@ -390,6 +390,10 @@ export default function KelolaPresensi({
     setTimeLeft(qrDuration * 60);
 
     try {
+      window.dispatchEvent(new CustomEvent('smasa_qr_session_updated', { detail: newSession }));
+    } catch (e) {}
+
+    try {
       await fetch('/api/qr-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -402,6 +406,10 @@ export default function KelolaPresensi({
     localStorage.removeItem('smasa_active_qr_session');
     setQrActiveSession(null);
     setTimeLeft(0);
+
+    try {
+      window.dispatchEvent(new CustomEvent('smasa_qr_session_updated', { detail: null }));
+    } catch (e) {}
 
     try {
       await fetch(`/api/qr-session?kelas=${encodeURIComponent(selectedKelas)}`, {
@@ -419,6 +427,10 @@ export default function KelolaPresensi({
     };
     localStorage.setItem('smasa_active_qr_session', JSON.stringify(extendedSession));
     setQrActiveSession(extendedSession);
+
+    try {
+      window.dispatchEvent(new CustomEvent('smasa_qr_session_updated', { detail: extendedSession }));
+    } catch (e) {}
 
     try {
       await fetch('/api/qr-session', {

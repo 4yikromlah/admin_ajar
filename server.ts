@@ -219,19 +219,35 @@ app.post('/api/teachers', async (req, res) => {
 app.get('/api/qr-session/active', (req, res) => {
   const { kelas } = req.query;
   const now = Date.now();
-  serverActiveQrSessions = serverActiveQrSessions.filter(s => s.expiresAt > now);
+  // Allow 15 minutes grace window for server/client clock skew or recent active session
+  serverActiveQrSessions = serverActiveQrSessions.filter(s => (s.expiresAt || 0) + 15 * 60 * 1000 > now);
   saveQrSessionsToDisk();
 
+  const norm = (str: any) => String(str || '').trim().toLowerCase().replace(/[\s\-_.]+/g, '');
+
   if (kelas) {
-    const targetKelas = String(kelas).trim().toLowerCase().replace(/\s+/g, '');
-    let active = serverActiveQrSessions.find(s => String(s.kelas).trim().toLowerCase().replace(/\s+/g, '') === targetKelas);
+    const target = norm(kelas);
+    // 1. Exact normalized match
+    let active = serverActiveQrSessions.find(s => norm(s.kelas) === target);
+    // 2. Contains / partial match
+    if (!active) {
+      active = serverActiveQrSessions.find(s => {
+        const sk = norm(s.kelas);
+        return sk && target && (sk.includes(target) || target.includes(sk) || sk === 'semuakelas' || sk === 'semua' || target === 'semuakelas' || target === 'semua');
+      });
+    }
+    // 3. Fallback to latest session if any active session exists
     if (!active && serverActiveQrSessions.length > 0) {
       active = serverActiveQrSessions[serverActiveQrSessions.length - 1];
     }
     return res.json({ status: 'success', session: active || null });
   }
 
-  return res.json({ status: 'success', sessions: serverActiveQrSessions, session: serverActiveQrSessions[serverActiveQrSessions.length - 1] || null });
+  return res.json({
+    status: 'success',
+    sessions: serverActiveQrSessions,
+    session: serverActiveQrSessions[serverActiveQrSessions.length - 1] || null
+  });
 });
 
 app.post('/api/qr-session', (req, res) => {
@@ -240,8 +256,9 @@ app.post('/api/qr-session', (req, res) => {
     return res.status(400).json({ status: 'error', error: 'Data sesi tidak lengkap' });
   }
 
-  const targetKelas = String(session.kelas).trim().toLowerCase();
-  serverActiveQrSessions = serverActiveQrSessions.filter(s => String(s.kelas).trim().toLowerCase() !== targetKelas);
+  const norm = (str: any) => String(str || '').trim().toLowerCase().replace(/[\s\-_.]+/g, '');
+  const targetKelas = norm(session.kelas);
+  serverActiveQrSessions = serverActiveQrSessions.filter(s => norm(s.kelas) !== targetKelas);
   serverActiveQrSessions.push(session);
   saveQrSessionsToDisk();
 
