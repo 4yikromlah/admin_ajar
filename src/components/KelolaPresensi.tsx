@@ -340,12 +340,18 @@ export default function KelolaPresensi({
       }
     };
 
+    const handleCustomPresensiEvent = () => {
+      performSyncAndLog(false);
+    };
+
     window.addEventListener('storage', handleStorage);
+    window.addEventListener('smasa_presensi_updated', handleCustomPresensiEvent);
     return () => {
       clearInterval(poll);
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('smasa_presensi_updated', handleCustomPresensiEvent);
     };
-  }, [qrActiveSession, selectedTanggal, selectedKelas, presensiList, onSavePresensi]);
+  }, [qrActiveSession, selectedTanggal, selectedKelas]);
 
   const handleStartQrSession = async () => {
     const today = new Date().toISOString().split('T')[0];

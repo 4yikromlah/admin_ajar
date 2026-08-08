@@ -167,6 +167,7 @@ export default function SiswaDashboard({
   const [tokenInput, setTokenInput] = useState('');
   const [presensiError, setPresensiError] = useState('');
   const [presensiSuccess, setPresensiSuccess] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [presensiToast, setPresensiToast] = useState<string | null>(null);
   const [scannedTime, setScannedTime] = useState('');
   const [isScanningActive, setIsScanningActive] = useState(false);
@@ -231,10 +232,11 @@ export default function SiswaDashboard({
         return;
       }
 
-      // Validasi kesesuaian kelas (abaikan spasi dan kapitalisasi)
-      const sessK = String(session.kelas || '').trim().toLowerCase().replace(/\s+/g, '');
-      const siswaK = String(siswa.kelas || '').trim().toLowerCase().replace(/\s+/g, '');
-      if (sessK && siswaK && sessK !== siswaK) {
+      // Validasi kesesuaian kelas (abaikan spasi, tanda hubung, titik, dan kapitalisasi)
+      const normK = (str: string) => String(str || '').trim().toLowerCase().replace(/[\s\-_.]+/g, '');
+      const sessK = normK(session.kelas);
+      const siswaK = normK(siswa.kelas);
+      if (sessK && siswaK && sessK !== siswaK && !sessK.includes(siswaK) && !siswaK.includes(sessK)) {
         setPresensiError(`Sesi presensi ini hanya berlaku untuk kelas ${session.kelas}. Kelas Anda tercatat sebagai kelas ${siswa.kelas}.`);
         setIsScanningActive(false);
         return;
@@ -270,9 +272,10 @@ export default function SiswaDashboard({
         playAudioBeep();
         setScannedTime(existingToday.waktu || nowTimeStr);
         setPresensiSuccess(true);
+        setShowSuccessModal(true);
         setIsScanningActive(false);
-        setPresensiToast(`Kehadiran Anda (${siswa.kelas}) sudah tercatat HADIR hari ini pukul ${existingToday.waktu || nowTimeStr} WIB.`);
-        setTimeout(() => setPresensiToast(null), 6000);
+        setPresensiToast(`✅ PRESENSI BERHASIL! Kehadiran Anda (${siswa.nama} - ${siswa.kelas}) sudah tercatat HADIR hari ini pukul ${existingToday.waktu || nowTimeStr} WIB.`);
+        setTimeout(() => setPresensiToast(null), 8000);
         return;
       }
 
@@ -323,10 +326,11 @@ export default function SiswaDashboard({
       playAudioBeep();
       setScannedTime(nowTimeStr);
       setPresensiSuccess(true);
+      setShowSuccessModal(true);
       setIsScanningActive(false);
       setTokenInput('');
-      setPresensiToast(`✅ Presensi QR Berhasil! Kehadiran Anda (${siswa.kelas}) telah tercatat pukul ${nowTimeStr} WIB.`);
-      setTimeout(() => setPresensiToast(null), 6000);
+      setPresensiToast(`🎉 SELAMAT! Presensi QR Berhasil! Kehadiran Anda (${siswa.nama} - ${siswa.kelas}) telah tercatat pukul ${nowTimeStr} WIB.`);
+      setTimeout(() => setPresensiToast(null), 8000);
     } catch (e) {
       console.error(e);
       setPresensiError('Terjadi kesalahan saat memproses presensi Anda.');
@@ -595,8 +599,74 @@ export default function SiswaDashboard({
 
   return (
     <div className="space-y-6 pb-20 relative">
-      {/* Toast Notifikasi Presensi QR Berhasil */}
+      {/* Modal Popup Notifikasi Presensi QR Berhasil */}
       <AnimatePresence>
+        {showSuccessModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4"
+            onClick={() => setShowSuccessModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 20, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-md w-full p-6 text-center space-y-5 shadow-2xl border border-emerald-100 relative overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute -top-12 -right-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl" />
+              <div className="w-20 h-20 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-xl shadow-emerald-200 border-4 border-emerald-100">
+                <Check size={44} className="stroke-[3.5px]" />
+              </div>
+              <div className="space-y-1.5">
+                <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider inline-block">
+                  Presensi QR Terverifikasi!
+                </span>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">🎉 PRESENSI BERHASIL!</h3>
+                <p className="text-xs text-slate-500">
+                  Kehadiran Anda telah berhasil dicatat dan divalidasi oleh sistem presensi QR-Code secara real-time.
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2 text-left text-xs">
+                <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
+                  <span className="text-slate-400 font-medium">Nama Siswa</span>
+                  <span className="font-extrabold text-slate-800">{siswa.nama}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
+                  <span className="text-slate-400 font-medium">NIS / ID</span>
+                  <span className="font-mono font-bold text-slate-700">{siswa.nis}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
+                  <span className="text-slate-400 font-medium">Kelas</span>
+                  <span className="font-extrabold text-blue-700">{siswa.kelas}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
+                  <span className="text-slate-400 font-medium">Waktu Presensi</span>
+                  <span className="font-mono font-black text-emerald-600">{scannedTime || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB</span>
+                </div>
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-slate-400 font-medium">Status Kehadiran</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider">
+                    HADIR
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-lg shadow-emerald-200 transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 size={16} />
+                <span>Saya Mengerti & Tutup</span>
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Toast Notifikasi Presensi QR Berhasil */}
         {presensiToast && (
           <motion.div
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
