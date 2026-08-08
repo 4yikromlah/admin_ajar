@@ -1369,9 +1369,17 @@ export async function pullSuperAdminFromGoogleSheets(): Promise<boolean> {
       }
     }
 
+    // Preserve and merge all local teacher accounts so offline/local accounts are never deleted on remote pull
+    for (const loc of localTeachers) {
+      const key = loc.username.trim().toLowerCase();
+      if (key && !teacherMap.has(key)) {
+        teacherMap.set(key, loc);
+      }
+    }
+
     const mergedTeachers = Array.from(teacherMap.values());
 
-    // Replace local browser storage completely with the remote spreadsheet database accounts
+    // Save merged teachers list to browser storage safely
     saveTeacherAccounts(mergedTeachers, true);
     return true;
   }

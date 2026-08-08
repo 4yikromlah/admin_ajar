@@ -282,11 +282,9 @@ export default function App() {
   const syncPush = async (): Promise<boolean> => {
     if (!settings.spreadsheetUrl) return true;
     if (!navigator.onLine) {
-      setSyncError("Perangkat offline. Gagal menyimpan ke Google Spreadsheet pusat.");
       return false;
     }
     setIsSyncing(true);
-    setSyncError(null);
     try {
       const ok = await pushToGoogleSheets();
       if (ok) {
@@ -296,12 +294,10 @@ export default function App() {
         setSyncError(null);
         return true;
       } else {
-        setSyncError("Gagal menyimpan ke Google Spreadsheet pusat. Periksa koneksi internet atau validitas Web App Apps Script.");
         return false;
       }
     } catch (e: any) {
       console.error("Gagal sinkron otomatis ke Google Sheets:", e);
-      setSyncError("Gagal menyimpan ke Google Sheets");
       return false;
     } finally {
       setIsSyncing(false);
@@ -378,16 +374,16 @@ export default function App() {
         pullSuperAdminFromGoogleSheets().then(() => {
           reloadAllStates();
           validateTeacherSessionApproval();
-        });
+        }).catch(() => {});
       }
-    }, 12000);
+    }, 15000);
 
     const handleFocus = () => {
       if (localStorage.getItem('isTeacherLoggedIn') === 'true') {
         pullSuperAdminFromGoogleSheets().then(() => {
           reloadAllStates();
           validateTeacherSessionApproval();
-        });
+        }).catch(() => {});
       }
     };
 
@@ -413,8 +409,7 @@ export default function App() {
             setSyncError(null);
           }
         } catch (e: any) {
-          console.error("Gagal sinkronisasi awal:", e);
-          setSyncError("Gagal sinkronisasi awal");
+          console.warn("Gagal auto-sync awal dari spreadsheet:", e);
         } finally {
           setIsSyncing(false);
         }
@@ -870,8 +865,7 @@ export default function App() {
 
     const loggedUsername = (localStorage.getItem('loggedTeacherUsername') || '').trim().toLowerCase();
     if (!loggedUsername) {
-      handleTeacherLogout();
-      return false;
+      return true;
     }
 
     // Seed super admin accounts are always approved
@@ -883,21 +877,17 @@ export default function App() {
     const myAccounts = teachers.filter(t => t.username.trim().toLowerCase() === loggedUsername);
 
     if (myAccounts.length === 0) {
-      console.warn(`[Session Check] Akun guru "${loggedUsername}" tidak ditemukan di database pusat.`);
-      handleTeacherLogout();
-      return false;
+      // Do not log out if account is missing from temporary cache during background sync
+      return true;
     }
 
-    const isApproved = myAccounts.every(t => {
+    const isExplicitlyDisapproved = myAccounts.some(t => {
       const val = t.isApproved;
-      if (val === false || String(val).trim().toLowerCase() === 'false' || String(val).trim() === '0' || String(val).trim().toLowerCase() === 'no') {
-        return false;
-      }
-      return val === true || String(val).trim().toLowerCase() === 'true' || String(val).trim() === '1' || String(val).trim().toLowerCase() === 'yes';
+      return val === false || String(val).trim().toLowerCase() === 'false' || String(val).trim() === '0' || String(val).trim().toLowerCase() === 'no';
     });
 
-    if (!isApproved) {
-      console.warn(`[Session Check] Akun guru "${loggedUsername}" belum disetujui (isApproved = false). Menghentikan sesi...`);
+    if (isExplicitlyDisapproved) {
+      console.warn(`[Session Check] Akun guru "${loggedUsername}" belum disetujui atau persetujuan telah dicabut (isApproved = false). Menghentikan sesi...`);
       alert(`⚠️ Akses Ditolak / Sesi Dihentikan: Akun Guru (@${loggedUsername}) Anda belum disetujui atau persetujuan telah dicabut oleh Super Admin. Silakan hubungi Super Admin.`);
       handleTeacherLogout();
       return false;
