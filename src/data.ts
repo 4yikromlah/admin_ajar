@@ -262,7 +262,7 @@ function getCaseInsensitiveProp(obj: any, targetKeys: string[]): any {
   return undefined;
 }
 
-function extractEntityArray(db: any, targetKeys: string[]): any[] | null {
+export function extractEntityArray(db: any, targetKeys: string[]): any[] | null {
   if (!db || typeof db !== 'object') return null;
   
   // Direct property check
@@ -317,7 +317,7 @@ export function normalizeSiswaList(rawList: any[]): Siswa[] {
       item.username ?? item.Username ?? item.USERNAME ?? item.user ?? nisVal
     ).trim();
     const passVal = String(
-      item.password ?? item.Password ?? item.PASSWORD ?? item.sandi ?? 'smasa123'
+      item.password ?? item.Password ?? item.PASSWORD ?? item.sandi ?? item.Pass ?? item.pass ?? item["Kata Sandi"] ?? item["KATA SANDI"] ?? item.katasandi ?? 'smasa123'
     ).trim();
 
     return {
@@ -820,6 +820,7 @@ export const saveSettings = (settings: AppSettings, skipAutoSync = false) => {
             username: newUsername,
             password: settings.adminPassword || t.password,
             email: settings.adminEmail || t.email || '',
+            spreadsheetUrl: settings.spreadsheetUrl || t.spreadsheetUrl || '',
             jumlahSiswa: siswaCount,
             lastSyncAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
           };

@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KeyRound, User, GraduationCap, ShieldCheck, Check, Sparkles, UserPlus, BookOpen, School, Mail, ArrowLeft, Lock, BellRing, Search, CheckCircle2, X } from 'lucide-react';
 import { Siswa, AppSettings, TeacherAccount } from '../types';
-import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchTeachersFromServer, fetchSuperAdminSpreadsheetUrlFromServer, fetchSuperAdminConfigFromServer, pullSuperAdminFromGoogleSheets, getTeacherSettings, normalizeSiswaList } from '../data';
+import { loadTeacherAccounts, saveTeacherAccounts, registerTeacherAndSync, fetchTeachersFromServer, fetchSuperAdminSpreadsheetUrlFromServer, fetchSuperAdminConfigFromServer, pullSuperAdminFromGoogleSheets, getTeacherSettings, normalizeSiswaList, normalizeNilaiList, normalizePresensiList, normalizePembelajaranList, normalizePengumumanList, normalizeRangkumanList, extractEntityArray } from '../data';
 import { ToastNotification, ToastProps } from './ToastNotification';
 
 interface LoginProps {
@@ -870,10 +870,12 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     const cleanPassword = siswaPassword.trim();
 
     // 1. Refresh teacher accounts from central cloud database and server
+    let freshTeachers: TeacherAccount[] = [];
     try {
-      const freshTeachers = await fetchTeachersFromServer();
+      freshTeachers = await fetchTeachersFromServer();
       if (freshTeachers && freshTeachers.length > 0) {
         setTeachersList(freshTeachers);
+        saveTeacherAccounts(freshTeachers, true);
       }
     } catch (e) {
       try {
@@ -881,7 +883,7 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
       } catch (err) {}
     }
 
-    const teachers = loadTeacherAccounts();
+    const teachers = (freshTeachers && freshTeachers.length > 0) ? freshTeachers : loadTeacherAccounts();
     const cleanSchoolName = (selectedSchool || '').trim().toLowerCase();
     const isAllSchoolsSelected = !selectedSchool || selectedSchool === '-- semua sekolah --';
 
@@ -897,50 +899,103 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
     let matchedTeacherUsername = '';
 
     const checkStudentInList = (list: Siswa[]) => {
+      if (!Array.isArray(list)) return null;
       return list.find((s) => {
+        if (!s) return false;
         const studentUsername = (s.username || '').trim().toLowerCase();
         const studentNis = (s.nis || '').trim().toLowerCase();
-        const studentPassword = (s.password || 'smasa123').trim();
-        return (studentUsername === cleanUsername || studentNis === cleanUsername) &&
-               studentPassword === cleanPassword;
+        const studentId = (s.id || '').trim().toLowerCase();
+        const studentNama = (s.nama || '').trim().toLowerCase();
+
+        const cleanUserNoZeros = cleanUsername.replace(/^0+/, '');
+        const studentNisNoZeros = studentNis.replace(/^0+/, '');
+
+        const usernameMatches = (
+          studentUsername === cleanUsername ||
+          studentNis === cleanUsername ||
+          studentId === cleanUsername ||
+          (cleanUserNoZeros.length > 0 && studentNisNoZeros === cleanUserNoZeros) ||
+          studentNama === cleanUsername
+        );
+
+        if (!usernameMatches) return false;
+
+        const studentPassword = String(s.password ?? 'smasa123').trim();
+        if (!studentPassword || studentPassword === '' || studentPassword.toLowerCase() === 'smasa123') {
+          return cleanPassword === 'smasa123' || cleanPassword === studentPassword || cleanPassword === '';
+        }
+        return studentPassword === cleanPassword;
       });
     };
 
-    // Urutan Filtrasi: 1. Guru dari sekolah terpilih -> 2. Guru lain sebagai cadangan
+    // Prioritaskan guru dari sekolah terpilih, namun tetap sertakan SEMUA guru terdaftar sebagai fallback
     const targetTeachers = (matchedTeachers.length > 0 && !isAllSchoolsSelected)
       ? [...matchedTeachers, ...teachers.filter(t => !matchedTeachers.includes(t))]
       : teachers;
 
-    // 2. Tarik database siswa secara LIVE dari Google Spreadsheet milik guru pengampu (Single Source of Truth)
+    // 2. Tarik database siswa secara LIVE dari Google Spreadsheet milik guru pengampu (Single Source of Truth / Rujukan Tunggal)
     for (const teacher of targetTeachers) {
-      if (teacher.spreadsheetUrl) {
+      const teacherUrl = teacher.spreadsheetUrl || getTeacherSettings(teacher.username)?.spreadsheetUrl || '';
+      if (teacherUrl) {
         try {
           const res = await fetch('/api/gas-proxy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: teacher.spreadsheetUrl, method: 'GET' })
+            body: JSON.stringify({ url: teacherUrl, method: 'GET' })
           });
           if (res.ok) {
             const db = await res.json();
             if (db && typeof db === 'object') {
-              const rawSiswa = db.siswa || db.siswaList || db.Siswa || db.DataSiswa;
-              if (Array.isArray(rawSiswa)) {
+              const rawSiswa = extractEntityArray(db, ['siswa', 'siswaList', 'Siswa', 'DataSiswa', 'data_siswa', 'Data_Siswa', 'students', 'student']);
+              if (rawSiswa && Array.isArray(rawSiswa)) {
                 const normalized = normalizeSiswaList(rawSiswa);
                 const scopedKey = `smasa_${teacher.username}_siswa`;
                 localStorage.setItem(scopedKey, JSON.stringify(normalized));
 
-                // Simpan juga tabel lainnya ke cache lokal jika ada
-                if (Array.isArray(db.nilai)) localStorage.setItem(`smasa_${teacher.username}_nilai`, JSON.stringify(db.nilai));
-                if (Array.isArray(db.presensi)) localStorage.setItem(`smasa_${teacher.username}_presensi`, JSON.stringify(db.presensi));
-                if (Array.isArray(db.pembelajaran)) localStorage.setItem(`smasa_${teacher.username}_pembelajaran`, JSON.stringify(db.pembelajaran));
-                if (Array.isArray(db.pengumuman)) localStorage.setItem(`smasa_${teacher.username}_pengumuman`, JSON.stringify(db.pengumuman));
-                if (Array.isArray(db.rangkuman)) localStorage.setItem(`smasa_${teacher.username}_rangkuman`, JSON.stringify(db.rangkuman));
-                if (db.settings) localStorage.setItem(`smasa_${teacher.username}_settings`, JSON.stringify(db.settings));
+                // Simpan juga tabel lainnya ke cache lokal
+                const rawNilai = extractEntityArray(db, ['nilai', 'nilaiList', 'Nilai', 'DataNilai']);
+                if (rawNilai && Array.isArray(rawNilai)) {
+                  const normNilai = normalizeNilaiList(rawNilai);
+                  localStorage.setItem(`smasa_${teacher.username}_nilai`, JSON.stringify(normNilai));
+                }
+                const rawPresensi = extractEntityArray(db, ['presensi', 'presensiList', 'Presensi', 'DataPresensi']);
+                if (rawPresensi && Array.isArray(rawPresensi)) {
+                  const normPresensi = normalizePresensiList(rawPresensi);
+                  localStorage.setItem(`smasa_${teacher.username}_presensi`, JSON.stringify(normPresensi));
+                }
+                const rawPembelajaran = extractEntityArray(db, ['pembelajaran', 'pembelajaranList', 'Pembelajaran', 'DataPembelajaran']);
+                if (rawPembelajaran && Array.isArray(rawPembelajaran)) {
+                  const normPembelajaran = normalizePembelajaranList(rawPembelajaran);
+                  localStorage.setItem(`smasa_${teacher.username}_pembelajaran`, JSON.stringify(normPembelajaran));
+                }
+                const rawPengumuman = extractEntityArray(db, ['pengumuman', 'pengumumanList', 'Pengumuman', 'DataPengumuman']);
+                if (rawPengumuman && Array.isArray(rawPengumuman)) {
+                  const normPengumuman = normalizePengumumanList(rawPengumuman);
+                  localStorage.setItem(`smasa_${teacher.username}_pengumuman`, JSON.stringify(normPengumuman));
+                }
+                const rawRangkuman = extractEntityArray(db, ['rangkuman', 'rangkumanList', 'Rangkuman', 'DataRangkuman']);
+                if (rawRangkuman && Array.isArray(rawRangkuman)) {
+                  const normRangkuman = normalizeRangkumanList(rawRangkuman);
+                  localStorage.setItem(`smasa_${teacher.username}_rangkuman`, JSON.stringify(normRangkuman));
+                }
+
+                if (db.settings) {
+                  localStorage.setItem(`smasa_${teacher.username}_settings`, JSON.stringify(db.settings));
+                }
 
                 const match = checkStudentInList(normalized);
                 if (match) {
                   found = match;
                   matchedTeacherUsername = teacher.username;
+
+                  // Update juga data global untuk akses instan
+                  localStorage.setItem('smasa_siswa', JSON.stringify(normalized));
+                  if (rawNilai) localStorage.setItem('smasa_nilai', JSON.stringify(normalizeNilaiList(rawNilai)));
+                  if (rawPresensi) localStorage.setItem('smasa_presensi', JSON.stringify(normalizePresensiList(rawPresensi)));
+                  if (rawPembelajaran) localStorage.setItem('smasa_pembelajaran', JSON.stringify(normalizePembelajaranList(rawPembelajaran)));
+                  if (rawPengumuman) localStorage.setItem('smasa_pengumuman', JSON.stringify(normalizePengumumanList(rawPengumuman)));
+                  if (rawRangkuman) localStorage.setItem('smasa_rangkuman', JSON.stringify(normalizeRangkumanList(rawRangkuman)));
+
                   break;
                 }
               }
@@ -965,8 +1020,8 @@ export default function Login({ siswaList, onTeacherLoginSuccess, onSuperAdminLo
           if (res.ok) {
             const db = await res.json();
             if (db && typeof db === 'object') {
-              const rawSiswa = db.siswa || db.siswaList || db.Siswa || db.DataSiswa;
-              if (Array.isArray(rawSiswa)) {
+              const rawSiswa = extractEntityArray(db, ['siswa', 'siswaList', 'Siswa', 'DataSiswa', 'data_siswa', 'Data_Siswa', 'students', 'student']);
+              if (rawSiswa && Array.isArray(rawSiswa)) {
                 const normalized = normalizeSiswaList(rawSiswa);
                 const match = checkStudentInList(normalized);
                 if (match) {
