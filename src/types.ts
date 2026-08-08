@@ -40,6 +40,7 @@ export interface Presensi {
   status: AttendanceStatus;
   waktu?: string; // Jam presensi, e.g. "08:15"
   metode?: 'Manual' | 'QR Code';
+  createdAt?: number;
 }
 
 export type JenisPembelajaran = 'Modul' | 'Literasi' | 'Tugas Harian' | 'Tugas Rumah' | 'Tugas/Tes';

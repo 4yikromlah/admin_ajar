@@ -207,6 +207,21 @@ export default function KelolaPresensi({
           return false;
         };
 
+        const isFreshQrScan = (qp: any) => {
+          if (!qp || qp.metode !== 'QR Code' || qp.status !== 'Hadir') return false;
+          let ts = (qp as any).createdAt || (qp as any).timestamp || 0;
+          if (!ts && qp.id && typeof qp.id === 'string' && qp.id.startsWith('P')) {
+            const parts = qp.id.slice(1).split('_');
+            const parsed = parseInt(parts[0], 10);
+            if (!isNaN(parsed) && parsed > 1600000000000) {
+              ts = parsed;
+            }
+          }
+          if (!ts) return false;
+          const ageMs = Date.now() - Number(ts);
+          return ageMs >= 0 && ageMs < 15000;
+        };
+
         validCheckins.forEach(qp => {
           const qpDate = normDate(qp.tanggal);
           const idx = merged.findIndex(p => {
@@ -226,10 +241,11 @@ export default function KelolaPresensi({
               status: qp.status || 'Hadir',
               waktu: qp.waktu || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
               metode: qp.metode || 'QR Code',
+              createdAt: (qp as any).createdAt || (qp as any).timestamp || Date.now(),
             };
             merged.push(newRec);
             mergedNewCount++;
-            if (newRec.status === 'Hadir') {
+            if (isFreshQrScan(qp) || isFreshQrScan(newRec)) {
               newlyScannedName = `${newRec.siswaNama} (${newRec.siswaKelas || ''})`;
             }
           } else {
@@ -244,6 +260,7 @@ export default function KelolaPresensi({
               status: 'Hadir',
               waktu: qp.waktu || current.waktu || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
               metode: qp.metode || current.metode || 'QR Code',
+              createdAt: (qp as any).createdAt || current.createdAt || Date.now(),
             };
 
             if (
@@ -254,7 +271,9 @@ export default function KelolaPresensi({
             ) {
               merged[idx] = updatedRec;
               mergedUpdatedCount++;
-              newlyScannedName = `${updatedRec.siswaNama} (${updatedRec.siswaKelas || ''})`;
+              if (isFreshQrScan(qp)) {
+                newlyScannedName = `${updatedRec.siswaNama} (${updatedRec.siswaKelas || ''})`;
+              }
             }
           }
         });

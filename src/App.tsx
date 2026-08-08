@@ -139,21 +139,16 @@ export default function App() {
       return;
     }
 
-    // Set timestamp aktivitas awal jika belum ada atau jika timestamp yang tersimpan sudah kadaluarsa (>= 30 menit)
+    // Selalu perbarui timestamp aktivitas saat pengguna aktif/login
     const initialNow = Date.now();
     lastActivityRef.current = initialNow;
-    const storedLastActivityStr = localStorage.getItem('smasa_last_activity');
-    const storedLastActivity = storedLastActivityStr ? parseInt(storedLastActivityStr, 10) : NaN;
+    localStorage.setItem('smasa_last_activity', initialNow.toString());
 
-    if (isNaN(storedLastActivity) || (initialNow - storedLastActivity >= IDLE_TIMEOUT_MS)) {
-      localStorage.setItem('smasa_last_activity', initialNow.toString());
-    }
-
-    // Listener aktivitas pengguna
+    // Listener aktivitas pengguna (termasuk interaksi elemen form & dropdown)
     let lastThrottle = 0;
     const handleUserActivity = () => {
       const now = Date.now();
-      if (now - lastThrottle > 1000) { // Throttle per 1 detik
+      if (now - lastThrottle > 500) { // Throttle per 0.5 detik
         lastThrottle = now;
         lastActivityRef.current = now;
         localStorage.setItem('smasa_last_activity', now.toString());
@@ -161,7 +156,10 @@ export default function App() {
       }
     };
 
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    const events = [
+      'mousemove', 'mousedown', 'mouseup', 'keydown', 'touchstart', 'touchend', 
+      'scroll', 'click', 'change', 'input', 'select', 'pointerdown', 'focus'
+    ];
     events.forEach((evt) => window.addEventListener(evt, handleUserActivity, { passive: true }));
 
     // Cek durasi inaktivitas setiap 1 detik
